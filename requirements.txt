@@ -1,0 +1,24 @@
+# torch is installed separately by setup.ps1 (CPU or CUDA build, depending on the PC)
+# Model runtime, versions from the Underdog Bark 3.0 model card
+transformers==5.19.0
+huggingface_hub==2.2.0
+constriction==0.5.0
+numpy==2.4.6
+soundfile==0.14.0
+soxr==1.1.0
+librosa==0.11.0
+# Whisper models (CTranslate2 runtime, int8 on the CPU)
+faster-whisper==1.2.1
+# Free on-PC AI for AI modes (llama.cpp). Prebuilt CPU wheel only: never compile from source.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+--only-binary llama-cpp-python
+llama-cpp-python==0.3.36
+# Natural read-aloud voices (Kokoro, ONNX). Its phonemiser uses espeak-ng (GPL-3.0).
+kokoro-onnx==0.6.1
+# App
+pywebview==6.2.1
+sounddevice==0.5.1
+pynput==1.8.1
+pystray==0.19.5
+pillow==11.3.0
+comtypes==1.4.11

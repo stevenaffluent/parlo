@@ -1,0 +1,10 @@
+# installed by Setup, never committed
+.venv/
+# downloaded models (hundreds of MB to GB each)
+model/
+models/
+# per-user settings, history, notes, logs and encrypted API keys
+data/
+__pycache__/
+*.part
+*.zip

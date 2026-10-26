@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parlo</title>
+<link rel="icon" href="logo.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><img class="logo" src="logo.svg" alt=""><span>Parlo</span></div>
+    <nav>
+      <button class="nav" data-page="home"><span data-icon="home"></span>Home</button>
+      <button class="nav" data-page="notes"><span data-icon="note"></span>Notes</button>
+      <button class="nav" data-page="modes"><span data-icon="sparkles"></span>AI modes</button>
+      <button class="nav" data-page="history"><span data-icon="clock"></span>History</button>
+      <button class="nav" data-page="read"><span data-icon="speaker"></span>Read aloud</button>
+      <button class="nav" data-page="models"><span data-icon="cpu"></span>Models</button>
+      <button class="nav" data-page="settings"><span data-icon="sliders"></span>Settings</button>
+    </nav>
+    <div class="engine-card" id="engineCard">
+      <div class="engine-row"><span class="dot" id="engineDot"></span><span id="engineName">Loading…</span></div>
+      <div class="engine-sub" id="engineSub"></div>
+    </div>
+  </aside>
+
+  <main>
+    <!-- HOME -->
+    <section class="page" id="page-home">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Dictate anywhere</div>
+          <h1>Press <span id="heroKeys" class="keys"></span> and start talking</h1>
+          <p class="muted" id="heroMode"></p>
+          <label class="mode-pick"><span data-icon="sparkles"></span>Mode <select id="modeSel"></select></label>
+        </div>
+        <div class="hero-orb"><div class="orb" id="heroOrb"><span data-icon="mic"></span></div></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span data-icon="type"></span><div><b id="stToday">0</b><small>words today</small></div></div>
+        <div class="stat"><span data-icon="sigma"></span><div><b id="stTotal">0</b><small>words in total</small></div></div>
+        <div class="stat"><span data-icon="bolt"></span><div><b id="stSaved">0 min</b><small>typing time saved</small></div></div>
+        <div class="stat"><span data-icon="layers"></span><div><b id="stCount">0</b><small>dictations</small></div></div>
+      </div>
+      <div class="row-head"><h2>Recent</h2>
+        <div class="actions"><button class="btn ghost" id="fileBtn"><span data-icon="upload"></span>Transcribe a file</button>
+        <button class="btn ghost" data-goto="history">See all</button></div></div>
+      <div class="list" id="recentList"></div>
+    </section>
+
+    <!-- NOTES -->
+    <section class="page notes-page" id="page-notes">
+      <div class="notes-list">
+        <div class="notes-top">
+          <div class="search"><span data-icon="search"></span><input id="noteSearch" placeholder="Search notes"></div>
+          <button class="icon-btn accent" id="newNote" title="New note"><span data-icon="plus"></span></button>
+        </div>
+        <div id="noteItems"></div>
+      </div>
+      <div class="editor-wrap" id="editorWrap">
+        <div class="empty-note" id="emptyNote">
+          <div class="orb small"><span data-icon="note"></span></div>
+          <h2>Voice notes</h2>
+          <p class="muted">Create a note, press the microphone and talk. Say <em>“new paragraph”</em>,
+            <em>“bullet point”</em>, <em>“numbered point”</em> or <em>“new heading”</em> to format as you speak.</p>
+          <button class="btn primary" id="newNote2"><span data-icon="plus"></span>New note</button>
+        </div>
+        <div class="editor" id="editor" hidden>
+          <input class="note-title" id="noteTitle" placeholder="Untitled note">
+          <div class="toolbar">
+            <button class="tb" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+            <button class="tb" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+            <button class="tb" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+            <button class="tb" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+            <span class="sep"></span>
+            <button class="tb" data-block="H1" title="Heading">H1</button>
+            <button class="tb" data-block="H2" title="Subheading">H2</button>
+            <button class="tb" data-block="P" title="Normal text"><span data-icon="pilcrow"></span></button>
+            <span class="sep"></span>
+            <button class="tb" data-cmd="insertUnorderedList" title="Bulleted list"><span data-icon="list"></span></button>
+            <button class="tb" data-cmd="insertOrderedList" title="Numbered list"><span data-icon="listnum"></span></button>
+            <button class="tb" id="checkBtn" title="Checklist"><span data-icon="checksq"></span></button>
+            <button class="tb" data-block="BLOCKQUOTE" title="Quote"><span data-icon="quote"></span></button>
+            <button class="tb" data-cmd="removeFormat" title="Clear formatting"><span data-icon="eraser"></span></button>
+            <span class="grow"></span>
+            <span class="saved muted" id="savedTag"></span>
+            <button class="tb" id="copyNote" title="Copy text"><span data-icon="copy"></span></button>
+            <button class="tb" id="exportNote" title="Save as Markdown"><span data-icon="export"></span></button>
+            <button class="tb" id="speakNote" title="Read aloud"><span data-icon="speaker"></span></button>
+            <button class="tb danger" id="deleteNote" title="Delete note"><span data-icon="trash"></span></button>
+          </div>
+          <div class="note-body" id="noteBody" contenteditable="true" spellcheck="true"></div>
+          <div class="live-note" id="liveNote" hidden></div>
+          <button class="mic-fab" id="noteMic" title="Dictate into this note">
+            <span class="ring"></span><span data-icon="mic"></span><span class="mic-label">Dictate</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI MODES -->
+    <section class="page" id="page-modes">
+      <h1>AI modes</h1>
+      <p class="muted">Speak naturally and let AI polish the words before they're inserted: clean up filler words,
+        turn rambling into an email, or make bullet points. It runs free on your own PC; an online service is optional.
+        Pick the default mode on Home, or give a mode its own shortcut.</p>
+      <div class="card group">
+        <h3><span data-icon="cpu"></span>AI engine</h3>
+        <div class="setting"><div><b>Runs on</b><small id="provNote"></small></div><select id="provSel"></select></div>
+        <div id="llmBox"><div class="llm-grid" id="llmGrid"></div>
+          <div class="advanced"><span class="muted small"><b>Advanced:</b> use your own model on a more powerful PC (any GGUF chat model).</span>
+            <button class="btn ghost sm" id="addLlmHf"><span data-icon="download"></span>From Hugging Face</button>
+            <button class="btn ghost sm" id="addLlmFile"><span data-icon="folder"></span>Choose a .gguf file</button></div></div>
+        <div class="setting" id="keyRow"><div><b>API key</b><small>Stored encrypted on this PC only. <a href="#" id="keyLink">Get a key</a></small></div>
+          <input type="password" id="aiKey" class="wide" autocomplete="off" spellcheck="false"></div>
+        <div class="setting" id="modelRow"><div><b>Model</b><small>Leave empty for the recommended one</small></div><input type="text" id="aiModel" class="wide" spellcheck="false"></div>
+        <div class="setting" id="baseRow"><div><b>Service address</b><small>The base URL ending in /v1</small></div><input type="text" id="aiBase" class="wide" spellcheck="false"></div>
+        <div class="right gap"><button class="btn ghost sm" id="testAi"><span data-icon="play"></span>Test</button><button class="btn primary sm" id="saveAi">Save</button></div>
+        <div id="aiResult" class="ai-result" hidden></div>
+      </div>
+      <div class="row-head"><h2>Modes</h2><button class="btn ghost" id="addMode"><span data-icon="plus"></span>New mode</button></div>
+      <div class="mode-grid" id="modeList"></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="page" id="page-history">
+      <div class="row-head"><h1>History</h1>
+        <div class="actions"><div class="search"><span data-icon="search"></span><input id="histSearch" placeholder="Search"></div>
+        <button class="btn ghost danger" id="clearHist"><span data-icon="trash"></span>Clear</button></div></div>
+      <div class="list" id="histList"></div>
+    </section>
+
+    <!-- READ ALOUD -->
+    <section class="page" id="page-read">
+      <h1>Read aloud</h1>
+      <p class="muted">Select text in any app and press <span class="keys" id="readKeys"></span>, or paste it here.</p>
+      <div class="voice-engine">
+        <div class="seg" id="ttsEngine"><button data-v="kokoro">Natural voices</button><button data-v="windows">Windows voices</button></div>
+        <span class="muted small" id="ttsNote"></span>
+      </div>
+      <div class="card kokoro-get" id="kokoroGet" hidden>
+        <div class="model-head"><div class="model-ico fam-Parakeet"><span data-icon="speaker"></span></div>
+          <div><b>Natural voices (Kokoro)</b><small>54 lifelike voices · runs on this PC · Apache-2.0</small></div></div>
+        <p class="muted small">Sounds like a person instead of a robot. A one-time 116 MB download; reading starts about a second after you press Speak.</p>
+        <div class="model-foot" id="kokoroFoot"></div>
+      </div>
+      <div class="card">
+        <textarea id="ttsText" placeholder="Type or paste text to hear it…"></textarea>
+        <div class="tts-bar">
+          <button class="btn primary round" id="ttsPlay"><span data-icon="play"></span>Speak</button>
+          <button class="btn ghost round" id="ttsStop"><span data-icon="stop"></span>Stop</button>
+          <span class="grow"></span>
+          <label class="field-inline">Voice <select id="voiceSel"></select></label>
+          <button class="btn ghost sm" id="tryVoice" hidden><span data-icon="play"></span>Try</button>
+          <label class="field-inline">Speed <input type="range" min="-10" max="10" id="rateSel"></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODELS -->
+    <section class="page" id="page-models">
+      <h1>Speech models</h1>
+      <p class="muted">Everything runs on this PC. Pick the model that suits your computer and language;
+        you can switch at any time and the old one is unloaded from memory.</p>
+      <div class="model-grid" id="modelGrid"></div>
+      <div class="advanced card"><span class="muted small"><b>Advanced:</b> add any faster-whisper model from Hugging Face, for example a
+        larger Whisper or one fine-tuned for your language.</span>
+        <button class="btn ghost sm" id="addWhisper"><span data-icon="download"></span>Add a Whisper model</button></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="page-settings">
+      <h1>Settings</h1>
+      <div class="card group">
+        <h3><span data-icon="keyboard"></span>Shortcuts</h3>
+        <div class="setting"><div><b>Dictation</b><small>Tap to start and stop, or hold while you talk</small></div>
+          <div class="shortcut"><span class="keys" id="dictKeys"></span><button class="btn ghost sm" data-capture="dictate_hotkey">Change</button></div></div>
+        <div class="setting"><div><b>Read selection aloud</b><small>Press again to stop</small></div>
+          <div class="shortcut"><span class="keys" id="readKeys2"></span><button class="btn ghost sm" data-capture="read_hotkey">Change</button></div></div>
+        <div class="setting"><div><b>Activation</b></div>
+          <div class="seg" data-setting="activation">
+            <button data-v="automatic">Automatic</button><button data-v="push_to_talk">Hold to talk</button><button data-v="toggle">Toggle</button></div></div>
+      </div>
+      <div class="card group">
+        <h3><span data-icon="mic"></span>Dictation</h3>
+        <div class="setting"><div><b>After transcribing</b></div>
+          <select data-setting="action">
+            <option value="autoInsert">Insert into the active app</option>
+            <option value="pasteAndSend">Insert and press Enter</option>
+            <option value="copyToClipboard">Copy to clipboard only</option>
+            <option value="historyOnly">Save to history only</option></select></div>
+        <div class="setting"><div><b>Insert by</b><small>Typing works in apps that block paste</small></div>
+          <div class="seg" data-setting="insert_method"><button data-v="paste">Paste</button><button data-v="type">Type</button></div></div>
+        <div class="setting"><div><b>Microphone</b></div><select data-setting="microphone" id="micSel"></select></div>
+        <div class="setting"><div><b>Sounds</b><small>A short chime when recording starts and stops</small></div><label class="switch"><input type="checkbox" data-setting="sounds"><i></i></label></div>
+        <div class="setting"><div><b>Tidy up</b><small>Capital letter at the start, full stop at the end</small></div><label class="switch"><input type="checkbox" data-setting="tidy"><i></i></label></div>
+        <div class="setting"><div><b>Space after each dictation</b></div><label class="switch"><input type="checkbox" data-setting="trailing_space"><i></i></label></div>
+      </div>
+      <div class="card group">
+        <h3><span data-icon="replace"></span>Word replacements</h3>
+        <p class="muted small">One per line: <code>heard =&gt; wanted</code>. Use <code>\n</code> for a new line, e.g. <code>new paragraph =&gt; \n\n</code></p>
+        <textarea id="replText" class="mono" rows="5" placeholder="open ai => OpenAI"></textarea>
+        <div class="right"><button class="btn primary sm" id="saveRepl">Save replacements</button></div>
+      </div>
+      <div class="card group">
+        <h3><span data-icon="pill"></span>Recording indicator</h3>
+        <div class="setting"><div><b>Style</b><small>What appears on screen while you dictate</small></div>
+          <div class="seg" data-setting="overlay_style"><button data-v="pill">Pill</button><button data-v="capsule">Top capsule</button><button data-v="dot">Dot</button><button data-v="off">Off</button></div></div>
+        <div class="setting"><div><b>Live text</b><small>Show the words as you speak (uses more CPU)</small></div><label class="switch"><input type="checkbox" data-setting="live_preview"><i></i></label></div>
+      </div>
+      <div class="card group">
+        <h3><span data-icon="sync"></span>Sync between PCs</h3>
+        <p class="muted small" id="syncText"></p>
+        <div class="right gap"><button class="btn ghost sm danger" id="stopSync" hidden>Stop syncing</button><button class="btn primary sm" id="pickSync"><span data-icon="folder"></span>Choose sync folder</button></div>
+      </div>
+      <div class="card group">
+        <h3><span data-icon="palette"></span>Appearance</h3>
+        <div class="setting"><div><b>Theme</b></div>
+          <div class="seg" data-setting="theme"><button data-v="dark">Dark</button><button data-v="light">Light</button><button data-v="system">System</button></div></div>
+      </div>
+      <div class="card group about">
+        <h3><span data-icon="info"></span>About</h3>
+        <p class="muted small">Parlo is private, offline dictation for Windows. Speech models:
+          Underdog Bark 3.0 and 3.0 Plus by Conway Research (CC-BY-4.0, derived from NVIDIA Parakeet TDT 0.6B v3 and
+          moondream/parakeet-ultra) and OpenAI Whisper via faster-whisper (MIT). Read aloud uses Windows voices.
+          An independent app inspired by Spokenly and Wispr Flow; not affiliated with either.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden><div class="modal-card">
+  <div class="modal-head"><h3 id="modalTitle"></h3><button class="icon-btn" id="modalClose"><span data-icon="x"></span></button></div>
+  <div class="modal-body" id="modalBody"></div>
+  <div class="modal-foot" id="modalFoot"></div>
+</div></div>
+<div class="capture" id="capture" hidden><div class="capture-card">
+  <div class="orb small"><span data-icon="keyboard"></span></div>
+  <h3>Press your new shortcut</h3>
+  <div class="keys big" id="captureKeys"><kbd>…</kbd></div>
+  <p class="muted small">Hold the keys together, then let go. Esc cancels.</p>
+</div></div>
+<div class="toasts" id="toasts"></div>
+<script src="icons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
