@@ -60,3 +60,69 @@ def note_tokens(text):
         tokens.append({"t": "text", "v": part})
         after_cmd = False
     return tokens
+
+
+# ---- personal dictionary ---------------------------------------------------------------
+def dictionary_terms(settings):
+    return [t.strip() for t in settings.get("dictionary", "").splitlines() if t.strip()]
+
+
+def apply_dictionary(text, terms):
+    """Fix near-misses of the user's own words: 'Paulo' -> 'Parlo', 'Open AI' -> 'OpenAI'.
+    A span of words is replaced when it is spelt alike (similar letters, same first letter),
+    so ordinary words are left alone."""
+    from difflib import SequenceMatcher
+
+    if not terms or not text:
+        return text
+    letters = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+    words = re.findall(r"\S+", text)
+    for term in sorted(terms, key=len, reverse=True):
+        key = letters(term)
+        if len(key) < 4:
+            continue  # too short to fuzzy-match safely; exact case is still fixed below
+        n_term = len(term.split())
+        for n in sorted({n_term, n_term + 1, max(1, n_term - 1)}):
+            i = 0
+            while i + n <= len(words):
+                chunk = words[i:i + n]
+                cand = letters("".join(chunk))
+                bare = re.sub(r"[^\w' ]+$", "", " ".join(chunk))
+                same_letters = cand == key and bare != term  # 'Open AI' for 'OpenAI'
+                slack = 1 if len(key) <= 6 else 2  # 'parlour' must not become 'Parlo'
+                if cand and bare != term and cand[0] == key[0] and abs(len(cand) - len(key)) <= slack \
+                        and (same_letters or SequenceMatcher(None, cand, key).ratio() >= 0.8):
+                    tail = re.search(r"[^\w']*$", chunk[-1]).group(0)  # keep the punctuation after it
+                    words[i:i + n] = [term + tail]
+                i += 1
+    text = " ".join(words)
+    for term in terms:  # exact matches in the wrong case: 'openai' -> 'OpenAI'
+        text = re.sub(r"(?i)(?<!\w)" + re.escape(term) + r"(?!\w)", term, text)
+    return text
+
+
+# ---- voice actions -------------------------------------------------------------------------
+# Said on their own, these do something instead of being typed.
+WHOLE_COMMANDS = {
+    "undo that": "undo", "undo": "undo", "scratch that": "delete_last", "delete that": "delete_last",
+    "select all": "select_all", "copy that": "copy", "press enter": "enter", "send it": "enter",
+    "send": "enter", "press tab": "tab", "press escape": "escape",
+}
+# Said at the end of a dictation, these run after the text is typed.
+TRAILING = {"press enter": "enter", "send it": "enter", "send message": "enter", "and send": "enter",
+            "press tab": "tab"}
+_TRAIL_RE = re.compile(r"[,.]?\s*\b(" + "|".join(map(re.escape, TRAILING)) + r")\b[.!]?\s*$", re.I)
+
+
+def parse_actions(text):
+    """-> (text_to_type, [actions]). 'Thanks, see you soon. Send it.' -> ('Thanks, see you soon.', ['enter'])."""
+    plain = re.sub(r"[^\w\s]", "", text).strip().lower()
+    if plain in WHOLE_COMMANDS:
+        return "", [WHOLE_COMMANDS[plain]]
+    m = _TRAIL_RE.search(text)
+    if m:
+        body = text[:m.start()].rstrip()
+        if body and body[-1].isalnum():
+            body += "."
+        return body, [TRAILING[m.group(1).lower()]]
+    return text, []
