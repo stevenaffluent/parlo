@@ -20,7 +20,11 @@ window.onBark = (kind, data) => {
   else if (kind === "models") { S.models = data; renderModels(); }
   else if (kind === "history") { S.history = data.items; S.stats = data.stats; renderHome(); renderHistory(); }
   else if (kind === "note_insert") { applyTokens(data); }
-  else if (kind === "level") { const r = $("#noteMic .ring"); if (r) r.style.transform = `scale(${0.6 + Math.min(1, data) * 0.9})`; }
+  else if (kind === "level") {
+    const v = Math.min(1, data);
+    const r = $("#noteMic .ring"); if (r && S.status?.target === "note") r.style.transform = `scale(${0.6 + v * 0.9})`;
+    $$("#heroOrb .wave i").forEach((b, i) => { b.style.height = `${8 + v * 30 * (0.55 + 0.45 * Math.abs(Math.sin(Date.now() / 140 + i * 1.7)))}px`; });
+  }
   else if (kind === "toast") { toast(data); }
   else if (kind === "settings") { S.settings = data; applyTheme(); renderSettings(); renderHome(); renderModes(); }
   else if (kind === "notes") { S.notes = data; renderNotesList(); }
@@ -40,7 +44,55 @@ function go(page) {
   S.page = page;
   $$(".nav").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page));
+  moveIndicator();
+  stagger($("#page-" + page));
   if (page === "models") refreshEngineMemory();
+}
+
+// ---------- motion ----------
+const navIndicator = document.createElement("div");
+navIndicator.className = "nav-indicator";
+$("nav").prepend(navIndicator);
+function moveIndicator() {
+  const b = $(".nav.active");
+  if (!b) return;
+  navIndicator.style.transform = `translateY(${b.offsetTop}px)`;
+  navIndicator.style.height = b.offsetHeight + "px";
+}
+window.addEventListener("resize", moveIndicator);
+// cards and rows rise in one after another when a page opens
+function stagger(root) {
+  if (!root) return;
+  $$(".hero, .stat, .item, .model, .mode-card, .group, .card, .nitem", root).slice(0, 24).forEach((el, i) => {
+    el.classList.remove("enter"); void el.offsetWidth;
+    el.style.setProperty("--i", Math.min(i, 14)); el.classList.add("enter");
+  });
+}
+// a soft glow follows the pointer across cards
+document.addEventListener("pointermove", (e) => {
+  const card = e.target.closest(".stat, .item, .model, .mode-card, .card, .hero");
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  card.style.setProperty("--my", `${e.clientY - r.top}px`);
+});
+// numbers count up to their new value
+function countTo(el, value, format = (v) => Math.round(v).toLocaleString()) {
+  const from = parseFloat(el.dataset.v || "0"), start = performance.now(), dur = 700;
+  el.dataset.v = value;
+  if (from === value || matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = format(value); return; }
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = format(from + (value - from) * e);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+// copy buttons flip to a tick for a moment
+function flashDone(btn) {
+  if (!btn) return;
+  const old = btn.innerHTML; btn.classList.add("done"); btn.innerHTML = icon("check");
+  setTimeout(() => { btn.classList.remove("done"); btn.innerHTML = old; }, 1200);
 }
 $$(".nav").forEach((b) => (b.onclick = () => go(b.dataset.page)));
 document.addEventListener("click", (e) => { const g = e.target.closest("[data-goto]"); if (g) go(g.dataset.goto); });
@@ -49,9 +101,11 @@ $("#engineCard").onclick = () => go("models");
 // ---------- helpers ----------
 const KEYNAMES = { ctrl: "Ctrl", win: "⊞ Win", alt: "Alt", shift: "Shift", space: "Space", escape: "Esc", enter: "Enter" };
 const keysHtml = (combo) => (combo || "").split("+").filter(Boolean).map((k) => `<kbd>${esc(KEYNAMES[k] || k.toUpperCase())}</kbd>`).join("");
-function toast(msg) {
-  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg;
-  $("#toasts").append(t); setTimeout(() => t.remove(), 3800);
+function toast(msg, ic = "info") {
+  const t = document.createElement("div"); t.className = "toast";
+  t.innerHTML = icon(ic) + `<span>${esc(msg)}</span>`;
+  $("#toasts").append(t);
+  setTimeout(() => { t.classList.add("out"); setTimeout(() => t.remove(), 260); }, 3800);
 }
 function when(t) {
   const d = new Date(t * 1000), now = new Date();
@@ -85,6 +139,7 @@ function renderStatus() {
   const recording = st.state === "recording", busy = st.state === "transcribing";
   const dotCls = recording ? "recording" : st.engine;
   $("#engineDot").className = "dot " + dotCls;
+  $("#engineCard").className = "engine-card " + (recording ? "recording" : st.engine === "loading" ? "loading shimmer" : "");
   $("#engineName").textContent = st.model || "No model";
   if (!(recording && st.target === "note")) $("#liveNote").hidden = true;
   $("#engineSub").textContent = recording ? "Listening…" : busy ? "Transcribing…" : st.state === "polishing" ? "Polishing with AI…" :
@@ -110,10 +165,10 @@ function renderHome() {
     push_to_talk: "Hold while you talk and let go to insert your words wherever you're typing.",
     toggle: "Tap to start, tap again to stop. Your words appear wherever you're typing.",
   }[s.activation];
-  $("#stToday").textContent = st.today_words.toLocaleString();
-  $("#stTotal").textContent = st.total_words.toLocaleString();
-  $("#stSaved").textContent = st.saved_min >= 60 ? (st.saved_min / 60).toFixed(1) + " h" : st.saved_min + " min";
-  $("#stCount").textContent = st.count.toLocaleString();
+  countTo($("#stToday"), st.today_words);
+  countTo($("#stTotal"), st.total_words);
+  countTo($("#stSaved"), st.saved_min, (v) => (st.saved_min >= 60 ? (v / 60).toFixed(1) + " h" : Math.round(v) + " min"));
+  countTo($("#stCount"), st.count);
   $("#modeSel").innerHTML = s.modes.map((m) => `<option value="${esc(m.id)}" ${m.id === s.active_mode ? "selected" : ""}>${esc(m.name)}</option>`).join("");
   const recent = S.history.slice(0, 5);
   $("#recentList").innerHTML = recent.length ? recent.map(itemHtml).join("") :
@@ -132,7 +187,7 @@ document.addEventListener("click", async (e) => {
   const btn = e.target.closest(".item .tool"); if (!btn) return;
   const t = parseFloat(btn.closest(".item").dataset.t);
   const entry = S.history.find((h) => h.t === t); if (!entry) return;
-  if (btn.dataset.act === "copy") { await API.copy_text(entry.text); toast("Copied"); }
+  if (btn.dataset.act === "copy") { await API.copy_text(entry.text); flashDone(btn); }
   if (btn.dataset.act === "speak") API.speak(entry.text);
   if (btn.dataset.act === "del") { S.stats = await API.delete_history(t); S.history = S.history.filter((h) => h.t !== t); renderHome(); renderHistory(); }
 });

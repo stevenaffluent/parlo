@@ -74,6 +74,7 @@ class App:
         self.events = queue.Queue()
         self.ui_queue = queue.Queue()
         self.window = None
+        self.window_visible = True
         self.ui_ready = False
         self.quitting = False
         self.state = "idle"  # idle | recording | transcribing
@@ -154,7 +155,7 @@ class App:
             log.exception("event handling failed")
         level = self.recorder.level if self.state == "recording" else 0.0
         self.overlay.tick(level)
-        if self.state == "recording" and self.target == "note":
+        if self.state == "recording" and self.window_visible:  # drives the live waveforms in the window
             self._level_n = getattr(self, "_level_n", 0) + 1
             if self._level_n % 3 == 0:
                 self.push("level", round(level * 12, 3))
@@ -444,6 +445,7 @@ class App:
             if self.window:
                 self.window.show()
                 self.window.restore()
+                self.window_visible = True
                 if args:
                     self.push("navigate", args[0])
         elif kind == "quit":
@@ -658,9 +660,37 @@ class App:
         return {"text": text, "secs": round(len(wave) / audio.SR), "took": took, "name": Path(path).name}
 
     # window ------------------------------------------------------------------------
+    def style_titlebar(self):
+        """Colour the native title bar to match the app's theme (Windows 10 dark mode, Windows 11 caption colour)."""
+        try:
+            hwnd = ctypes.windll.user32.FindWindowW(None, "Parlo")
+            if not hwnd:
+                return
+            theme = self.settings["theme"]
+            if theme == "system":
+                import winreg
+
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+                    theme = "light" if winreg.QueryValueEx(k, "AppsUseLightTheme")[0] else "dark"
+            dark = theme != "light"
+            dwm = ctypes.windll.dwmapi
+            for attr, value in ((20, int(dark)),  # DWMWA_USE_IMMERSIVE_DARK_MODE
+                                (35, 0x00161212 if dark else 0x00F2EFEF),  # caption colour #121216 / #efeff2 (0x00BBGGRR)
+                                (36, 0x00F1ECEC if dark else 0x001D1818)):  # caption text colour
+                v = ctypes.c_int(value)
+                dwm.DwmSetWindowAttribute(ctypes.c_void_p(hwnd), attr, ctypes.byref(v), 4)
+        except Exception:
+            log.debug("title bar styling unavailable", exc_info=True)
+
+    def on_shown(self):
+        self.window_visible = True
+        self.style_titlebar()
+
     def on_closing(self):
         if self.quitting:
             return True
+        self.window_visible = False
         self.window.hide()
         if not self.settings["tray_hint_shown"]:
             self.settings["tray_hint_shown"] = True
@@ -701,6 +731,8 @@ class Api:
         app.settings.update(changes)
         app.settings.save()
         app.apply_settings()
+        if "theme" in changes:
+            app.style_titlebar()
         return app.public_settings()
 
     # AI modes
@@ -955,6 +987,7 @@ def main():
         background_color="#0e0e11" if app.settings["theme"] != "light" else "#f6f6f8")
     app.window = window
     window.events.closing += app.on_closing
+    window.events.shown += app.on_shown
     webview.start(gui="edgechromium", icon=str(DATA / "icon.ico"))
     del mutex
     os._exit(0)

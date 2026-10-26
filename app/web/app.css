@@ -272,3 +272,90 @@ a { color: var(--accent); }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; border: 3px solid var(--bg); }
+
+/* ======================================================================================
+   Polish layer: motion, glass and hover depth.
+   Rules: motion explains state or gives feedback; 150-350 ms; glass only on floating layers
+   (sidebar, dialogs, toasts); everything still for "reduce motion".
+   ====================================================================================== */
+:root, [data-theme="dark"] { --glass: rgba(20, 20, 25, .72); --glass-strong: rgba(24, 24, 30, .86); --glass-edge: rgba(255, 255, 255, .07); --glow: rgba(239, 123, 69, .13); }
+[data-theme="light"] { --glass: rgba(246, 246, 248, .74); --glass-strong: rgba(255, 255, 255, .88); --glass-edge: rgba(20, 20, 40, .08); --glow: rgba(194, 65, 12, .08); }
+.ease { transition-timing-function: cubic-bezier(.2, .8, .2, 1); }
+
+/* ambient light behind everything: two slow-drifting accent glows the glass layers blur */
+body::before, body::after { content: ""; position: fixed; z-index: -1; width: 46vmax; height: 46vmax; border-radius: 50%; filter: blur(80px); opacity: .55; pointer-events: none; }
+body::before { background: radial-gradient(circle, rgba(239, 123, 69, .16), transparent 65%); top: -18vmax; right: -12vmax; animation: drift1 38s ease-in-out infinite alternate; }
+body::after { background: radial-gradient(circle, rgba(120, 90, 255, .08), transparent 65%); bottom: -22vmax; left: 8vmax; animation: drift2 46s ease-in-out infinite alternate; }
+@keyframes drift1 { to { transform: translate(-9vmax, 7vmax) scale(1.12); } }
+@keyframes drift2 { to { transform: translate(10vmax, -6vmax) scale(.92); } }
+html, body { background: transparent; } html { background: var(--bg); }
+main { background: transparent; }
+
+/* sidebar: frosted glass, with a highlight that slides between items */
+.sidebar { background: var(--glass); backdrop-filter: blur(22px) saturate(150%); border-right-color: var(--glass-edge); }
+nav { position: relative; }
+.nav { position: relative; z-index: 1; transition: color .2s, transform .15s; }
+.nav.active { background: transparent; box-shadow: none; }
+.nav:active { transform: scale(.98); }
+.nav-indicator { position: absolute; left: 0; right: 0; top: 0; height: 38px; border-radius: 9px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border), 0 4px 14px rgba(0, 0, 0, .18);
+  transition: transform .32s cubic-bezier(.2, .8, .2, 1), height .32s; z-index: 0; pointer-events: none; }
+.nav-indicator::before { content: ""; position: absolute; left: -12px; top: 9px; bottom: 9px; width: 3px; border-radius: 3px; background: var(--accent); }
+.nav .i { transition: transform .25s cubic-bezier(.2, .8, .2, 1); } .nav:hover .i { transform: scale(1.12); }
+
+/* pages rise in; cards and rows stagger in after them */
+.page.active { animation: rise .34s cubic-bezier(.2, .8, .2, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+.page.active .enter { animation: rise .42s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 38ms); }
+
+/* cards: lift on hover and a soft glow that follows the pointer (no blur: stays crisp and cheap) */
+.card, .stat, .item, .model, .mode-card, .hero { position: relative; transition: transform .22s cubic-bezier(.2, .8, .2, 1), border-color .22s, box-shadow .22s; }
+.stat::before, .item::before, .model::before, .mode-card::before, .card::before, .hero::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .25s;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), var(--glow), transparent 65%); }
+.stat:hover::before, .item:hover::before, .model:hover::before, .mode-card:hover::before, .card:hover::before, .hero:hover::before { opacity: 1; }
+.stat:hover, .item:hover, .model:hover, .mode-card:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0, 0, 0, .22); border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); }
+.stat > *, .item > *, .model > *, .mode-card > *, .card > *, .hero > * { position: relative; }
+
+/* buttons: press feedback and a warm glow on primary */
+.btn, .icon-btn, .tool, .tb, .seg button { transition: background .15s, border-color .15s, transform .12s cubic-bezier(.2, .8, .2, 1), box-shadow .2s, color .15s; }
+.btn:active, .icon-btn:active, .tool:active, .tb:active { transform: scale(.96); }
+.btn.primary:hover, .icon-btn.accent:hover { box-shadow: 0 6px 20px rgba(194, 65, 12, .35); }
+.tool.done { color: var(--green); }
+.tool .i, .btn .i { transition: transform .2s; } .tool:hover .i { transform: scale(1.12); }
+.seg button.on { animation: pop .25s cubic-bezier(.2, .8, .2, 1); }
+@keyframes pop { from { transform: scale(.94); } }
+.switch i::after { transition: transform .25s cubic-bezier(.3, 1.4, .5, 1), background .2s; }
+
+/* dialogs and toasts: glass that scales and slides in */
+.modal, .capture { background: rgba(5, 5, 8, .45); backdrop-filter: blur(6px); animation: fadein .2s ease; }
+.modal-card, .capture-card { background: var(--glass-strong); backdrop-filter: blur(26px) saturate(160%); border-color: var(--glass-edge);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .05); animation: zoomin .26s cubic-bezier(.2, .8, .2, 1); }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes zoomin { from { opacity: 0; transform: translateY(8px) scale(.965); } }
+.toast { display: flex; align-items: center; gap: 10px; background: var(--glass-strong); backdrop-filter: blur(22px) saturate(160%); border-color: var(--glass-edge);
+  animation: slidein .32s cubic-bezier(.2, .8, .2, 1); overflow: hidden; position: relative; padding-right: 18px; }
+.toast .i { color: var(--accent); width: 16px; height: 16px; }
+.toast::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); width: 100%; transform-origin: left; animation: drain 3.8s linear forwards; }
+.toast.out { animation: slideout .25s ease forwards; }
+@keyframes slidein { from { opacity: 0; transform: translateX(24px); } }
+@keyframes slideout { to { opacity: 0; transform: translateX(24px); } }
+@keyframes drain { to { transform: scaleX(0); } }
+
+/* home mic: a live waveform inside the orb while you talk */
+.orb .wave { display: none; gap: 4px; align-items: center; height: 40px; }
+.orb.live .wave { display: flex; } .orb.live > [data-icon] { display: none; }
+.orb .wave i { width: 5px; border-radius: 3px; background: #fff; height: 8px; transition: height .08s linear; }
+
+/* loading shimmer for things that are still starting */
+.shimmer { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .06), transparent) var(--surface); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.engine-card { transition: border-color .3s, box-shadow .3s; }
+.engine-card.loading { animation: none; border-color: color-mix(in srgb, var(--amber) 40%, var(--border)); }
+.engine-card.recording { border-color: color-mix(in srgb, var(--red) 55%, var(--border)); box-shadow: 0 0 0 3px rgba(255, 99, 99, .12); }
+
+/* numbers that count up */
+.stat b { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  body::before, body::after { animation: none; }
+}
