@@ -40,7 +40,7 @@ from hotkeys import HotkeyManager  # noqa: E402
 from overlay import Overlay  # noqa: E402
 from speech import Speaker  # noqa: E402
 from store import DEFAULTS, History, Notes, Settings, start_sync, stop_sync  # noqa: E402
-from textfmt import note_tokens, postprocess  # noqa: E402
+from textfmt import apply_dictionary, dictionary_terms, note_tokens, parse_actions, postprocess  # noqa: E402
 
 HOLD_S = 0.45  # in automatic mode, holding longer than this means push-to-talk
 LIVE_EVERY_S = 1.2  # how often the live transcript refreshes while recording
@@ -49,6 +49,9 @@ LLM_IDLE_S = 300  # unload the local AI model after 5 idle minutes to give the m
 LLM_WORKER = Path(__file__).with_name("llm_worker.py")
 TTS_WORKER = Path(__file__).with_name("tts_worker.py")
 SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|\n+")
+MEETING_CHUNK_S = 30  # the meeting recorder transcribes and saves every 30 seconds
+ACTION_NAMES = {"undo": "Undo", "delete_last": "Deleted", "select_all": "Select all", "copy": "Copied",
+                "enter": "Enter", "tab": "Tab", "escape": "Escape"}
 
 
 def load_audio_file(path):
@@ -68,6 +71,12 @@ class App:
         self.settings = Settings(DATA / "settings.json")
         self._open_stores()
         self.mode = None  # the AI mode of the dictation in progress
+        self.current_app = ""  # exe of the app the dictation goes into
+        self.last_inserted = ""  # for "scratch that"
+        self.edit_selection = ""
+        self.meeting = None
+        self.test_rec = None  # microphone check during onboarding
+        self.widget = None
         self.live_busy = False
         self.last_live = 0.0
         self.last_sync_check = 0.0
@@ -141,6 +150,8 @@ class App:
         self.root.withdraw()
         self.overlay = Overlay(self.root)
         self.overlay.style = self.settings["overlay_style"]
+        if self.settings["widget"]:
+            self._show_widget(True)
         ready.set()
         self.root.after(30, self._pump)
         self.root.mainloop()
@@ -155,10 +166,10 @@ class App:
             log.exception("event handling failed")
         level = self.recorder.level if self.state == "recording" else 0.0
         self.overlay.tick(level)
-        if self.state == "recording" and self.window_visible:  # drives the live waveforms in the window
+        if (self.state == "recording" or self.test_rec) and self.window_visible:  # live waveforms in the window
             self._level_n = getattr(self, "_level_n", 0) + 1
             if self._level_n % 3 == 0:
-                self.push("level", round(level * 12, 3))
+                self.push("level", round((self.test_rec.level if self.test_rec else level) * 12, 3))
         now = time.time()
         if (self.state == "recording" and self.settings["live_preview"] and not self.live_busy
                 and now - self.last_live >= LIVE_EVERY_S and now - self.press_t >= 1.0):
@@ -316,7 +327,7 @@ class App:
 
     def _live_preview(self):
         try:
-            text = self.engine.try_transcribe(self.recorder.snapshot(LIVE_WINDOW_S))
+            text = self.engine.try_transcribe(self.recorder.snapshot(LIVE_WINDOW_S), self.transcribe_opts())
             if text and self.state == "recording":
                 self.post("live", text)
         finally:
@@ -337,7 +348,7 @@ class App:
 
     def apply_settings(self):
         s = self.settings
-        bindings = {"dictate": s["dictate_hotkey"], "read": s["read_hotkey"]}
+        bindings = {"dictate": s["dictate_hotkey"], "read": s["read_hotkey"], "edit": s["edit_hotkey"]}
         for m in s["modes"]:
             if m.get("hotkey"):
                 bindings["mode:" + m["id"]] = m["hotkey"]
@@ -411,7 +422,27 @@ class App:
         if kind.endswith(("_down", "_up")) or kind in ("escape", "note_toggle"):
             log.info("event %s (state %s)", kind, self.state)
         if kind == "dictate_down":
-            self._dictate_down(args[0], "insert", self.settings["active_mode"])
+            if self.state == "recording":
+                self._stop_recording()
+            else:
+                self._dictate_down(args[0], "insert", self.mode_for_app())
+        elif kind == "widget_click":
+            if self.state == "recording":
+                self._stop_recording()
+            else:
+                self._dictate_down(time.time(), "insert", self.mode_for_app())
+        elif kind == "edit_down":
+            if self.state == "recording" and self.target == "edit":
+                self._stop_recording()
+            elif self.state == "idle":
+                threading.Thread(target=self._edit_begin, daemon=True).start()
+        elif kind == "edit_start":
+            self.edit_selection = args[0] or ""
+            self._dictate_down(time.time(), "edit")
+        elif kind == "edited":
+            self._finish_edit(*args)
+        elif kind == "widget":
+            self._show_widget(args[0])
         elif kind.startswith("mode:") and kind.endswith("_down"):  # a mode's own shortcut
             self._dictate_down(args[0], "insert", kind[5:-5])
         elif kind == "dictate_up" or (kind.startswith("mode:") and kind.endswith("_up")):
@@ -451,10 +482,33 @@ class App:
         elif kind == "quit":
             self.quit()
 
+    def _show_widget(self, on):
+        if on and not self.widget:
+            from widget import Widget
+
+            def moved(x, y):
+                self.settings["widget_pos"] = [x, y]
+                self.settings.save()
+
+            def hide():
+                self.settings["widget"] = False
+                self.settings.save()
+                self._show_widget(False)
+                self.push("settings", self.public_settings())
+
+            self.widget = Widget(self.root, self.settings["widget_pos"], lambda: self.post("widget_click"),
+                                 lambda: self.post("show"), hide, moved)
+            self.widget.set_state(self.state)
+        elif not on and self.widget:
+            self.widget.destroy()
+            self.widget = None
+
     def _set_state(self, state):
         recording_changed = (state == "recording") != (self.state == "recording")
         self.state = state
         self.push("status", self.status())
+        if self.widget:
+            self.widget.set_state(state)
         if recording_changed:
             from icon import make_icon
 
@@ -508,7 +562,24 @@ class App:
         self.push("tts", self.tts_state())
 
     # dictation -------------------------------------------------------------------
+    def mode_for_app(self):
+        """The mode to use for the app in front: a mode that lists this app, else the default mode."""
+        exe, _ = textout.foreground_app()
+        self.current_app = exe
+        for m in self.settings["modes"]:
+            if exe and exe in [a.lower() for a in m.get("apps", [])]:
+                return m["id"]
+        return self.settings["active_mode"]
+
+    def transcribe_opts(self):
+        """Hints for Whisper models: the language to expect and the user's dictionary words."""
+        terms = dictionary_terms(self.settings)
+        lang = self.settings["language"]
+        return {"language": None if lang == "auto" else lang,
+                "prompt": ("Glossary: " + ", ".join(terms) + ".") if terms else None}
+
     def _dictate_down(self, t, target, mode_id=None):
+        """target: insert (type into the app in front), note (the open note) or edit (edit by voice)."""
         if self.state == "idle":
             if self.engine_state != "ready":
                 text = {"loading": "Model still loading", "missing": "Download a model first"}.get(
@@ -529,11 +600,12 @@ class App:
             self.mode = self.mode_by_id(mode_id) if target == "insert" else None
             ai_mode = self.mode if self.mode and self.mode.get("instructions", "").strip() else None
             self._set_state("recording")
-            log.info("recording at %d Hz for %s (mode %s)", self.recorder.rate, target, mode_id)
+            log.info("recording at %d Hz for %s (mode %s, app %s)", self.recorder.rate, target, mode_id, self.current_app)
             if self.settings["sounds"]:
                 audio.play_cue("start")
-            self.overlay.show("", "rec", label=ai_mode["name"] if ai_mode else "")
-            if ai_mode and self.settings["ai_provider"] == "local" and not self.llm.ready:
+            label = "Edit" if target == "edit" else ai_mode["name"] if ai_mode else ""
+            self.overlay.show("", "rec", label=label)
+            if (ai_mode or target == "edit") and self.settings["ai_provider"] == "local" and not self.llm.ready:
                 threading.Thread(target=self._preload_llm, daemon=True).start()
         elif self.state == "recording":  # second tap in toggle / automatic mode
             self._stop_recording()
@@ -558,11 +630,11 @@ class App:
             return
         self._set_state("transcribing")
         self.overlay.show("Transcribing", "busy")
-        target = self.target
+        target, opts = self.target, self.transcribe_opts()
 
         def work():
             try:
-                text, took = self.engine.transcribe(wave)
+                text, took = self.engine.transcribe(wave, opts)
                 log.info("transcribed %.1fs of audio in %.2fs", secs, took)
             except Exception as e:
                 log.exception("transcription failed")
@@ -583,6 +655,7 @@ class App:
             self._set_state("idle")
             self.overlay.show("No speech heard", "info", hide_after=1.2)
             return
+        text = apply_dictionary(text, dictionary_terms(self.settings))
         if target == "note":
             from engine import tidy
 
@@ -591,27 +664,40 @@ class App:
             text = tidy(text) if self.settings["tidy"] else text
             self.push("note_insert", note_tokens(text))
             return
+        if target == "edit":
+            self._set_state("polishing")
+            self.overlay.show("Editing", "busy")
+            threading.Thread(target=self._edit, args=(text, secs), daemon=True).start()
+            return
+        actions = []
+        if self.settings["voice_actions"]:
+            text, actions = parse_actions(text)
+            if not text:  # the whole dictation was a command such as "undo that"
+                self._set_state("idle")
+                self.overlay.show(ACTION_NAMES.get(actions[0], "Done"), "info", hide_after=1.0)
+                threading.Thread(target=self._run_actions, args=(actions,), daemon=True).start()
+                return
         mode = self.mode
         if mode and mode.get("instructions", "").strip():
             self._set_state("polishing")
             self.overlay.show(f"{mode['name']}: polishing", "busy")
-            threading.Thread(target=self._polish, args=(text, secs, mode), daemon=True).start()
+            threading.Thread(target=self._polish, args=(text, secs, mode, actions), daemon=True).start()
         else:
-            self._finish_insert(text, secs, None, None, None)
+            self._finish_insert(text, secs, None, None, None, actions)
 
-    def _polish(self, raw, secs, mode):
+    def _polish(self, raw, secs, mode, actions):
         s = self.settings
         t0 = time.time()
         try:
             out = ai.rewrite(raw, mode["instructions"], s["ai_provider"], secrets_store.unprotect(s["ai_key"]),
                              s["ai_model"], s["ai_base_url"], local=self._local_rewrite)
             log.info("AI mode %s took %.1fs", mode["id"], time.time() - t0)
-            self.post("polished", out, secs, raw, mode["name"], None)
+            self.post("polished", out, secs, raw, mode["name"], None, actions)
         except ai.AIError as e:
             log.warning("AI mode %s failed: %s", mode["id"], e)
-            self.post("polished", raw, secs, None, mode["name"], str(e))
+            self.post("polished", raw, secs, None, mode["name"], str(e), actions)
 
-    def _finish_insert(self, text, secs, raw, mode_name, error):
+    def _finish_insert(self, text, secs, raw, mode_name, error, actions=()):
         self._set_state("idle")
         if error:
             self.overlay.show("AI failed: plain text inserted", "info", hide_after=2.5)
@@ -622,7 +708,7 @@ class App:
         if raw and text[:1].islower():
             text = text[0].upper() + text[1:]
         out = postprocess(text, dict(self.settings, tidy=False) if raw else self.settings)
-        self.history.add(out.strip(), secs, self.engine.model_id, raw=raw, mode=mode_name)
+        self.history.add(out.strip(), secs, self.engine.model_id, raw=raw, mode=mode_name, app=self.current_app)
         self.push("history", {"items": list(reversed(self.history.items))[:200], "stats": self.history.stats()})
         action, method = self.settings["action"], self.settings["insert_method"]
 
@@ -633,13 +719,62 @@ class App:
                     textout.set_clipboard_text(out.strip())
                 elif action in ("autoInsert", "pasteAndSend"):
                     (textout.type_text if method == "type" else textout.paste_text)(out)
+                    self.last_inserted = out
                     if action == "pasteAndSend":
                         textout.press_enter()
+                    self._run_actions(actions)
             except Exception:
                 log.exception("inserting text failed")
 
         if action != "historyOnly":
             threading.Thread(target=insert, daemon=True).start()
+
+    def _run_actions(self, actions):
+        if not actions:
+            return
+        self.hotkeys.wait_released()
+        for a in actions:
+            log.info("voice action: %s", a)
+            textout.run_action(a, self.last_inserted)
+            if a == "delete_last":
+                self.last_inserted = ""
+
+    # edit by voice: select text, press the edit shortcut, say what to change ---------------
+    def _edit_begin(self):
+        self.hotkeys.wait_released()
+        self.current_app = textout.foreground_app()[0]
+        selection = textout.copy_selection()
+        self.post("edit_start", selection)
+
+    def _edit(self, instruction, secs):
+        s = self.settings
+        sel = self.edit_selection
+        prompt = f"INSTRUCTION: {instruction}\n\nTEXT:\n{sel}" if sel.strip() else f"INSTRUCTION: {instruction}"
+        try:
+            out = ai.rewrite(prompt, "", s["ai_provider"], secrets_store.unprotect(s["ai_key"]), s["ai_model"],
+                             s["ai_base_url"], local=self._local_rewrite, system=ai.EDIT_SYSTEM)
+            self.post("edited", out, secs, instruction, None)
+        except ai.AIError as e:
+            log.warning("edit by voice failed: %s", e)
+            self.post("edited", None, secs, instruction, str(e))
+
+    def _finish_edit(self, out, secs, instruction, error):
+        self._set_state("idle")
+        if error:
+            self.overlay.show("Edit failed", "info", hide_after=2)
+            self.push("toast", f"Edit by voice: {error}")
+            return
+        self.overlay.hide()
+        self.history.add(out, secs, self.engine.model_id, raw=f"Edit: {instruction}", mode="Edit by voice",
+                         app=self.current_app)
+        self.push("history", {"items": list(reversed(self.history.items))[:200], "stats": self.history.stats()})
+
+        def replace():
+            self.hotkeys.wait_released()
+            textout.paste_text(out)  # the selection is still active, so pasting replaces it
+            self.last_inserted = out
+
+        threading.Thread(target=replace, daemon=True).start()
 
     def _read_selection(self):
         self.hotkeys.wait_released()
@@ -650,14 +785,137 @@ class App:
         if self.engine_state != "ready":
             raise RuntimeError("The speech model is not ready yet.")
         wave = load_audio_file(path)
-        text, took = self.engine.transcribe(wave)
+        text, took = self.engine.transcribe(wave, self.transcribe_opts())
         from engine import tidy
 
+        text = apply_dictionary(text, dictionary_terms(self.settings))
         text = tidy(text) if self.settings["tidy"] else text
         if text:
-            self.history.add(text, len(wave) / audio.SR, self.engine.model_id)
+            self.history.add(text, len(wave) / audio.SR, self.engine.model_id, app="file")
             self.push("history", {"items": list(reversed(self.history.items))[:200], "stats": self.history.stats()})
         return {"text": text, "secs": round(len(wave) / audio.SR), "took": took, "name": Path(path).name}
+
+    # meeting recorder: long recordings into a note, with an AI summary at the end ------------
+    def meeting_start(self):
+        if self.meeting:
+            return self.meeting["note_id"]
+        if self.engine_state != "ready":
+            raise RuntimeError("The speech model is not ready yet.")
+        note = self.notes.new()
+        title = "Meeting " + time.strftime("%d %b %Y, %H:%M")
+        self.notes.save(note["id"], title, "<h2>Transcript</h2>", "")
+        rec = audio.Recorder()
+        rec.start(self.settings["microphone"])
+        self.meeting = {"note_id": note["id"], "title": title, "rec": rec, "start": time.time(), "parts": [],
+                        "stop": threading.Event()}
+        threading.Thread(target=self._meeting_loop, args=(self.meeting,), daemon=True).start()
+        self.push("meeting", {"note_id": note["id"], "state": "recording", "start": self.meeting["start"]})
+        self.push("notes", self.notes.list())
+        return note["id"]
+
+    def meeting_stop(self):
+        if self.meeting:
+            self.meeting["stop"].set()
+
+    def _meeting_loop(self, m):
+        """Every 30 s: transcribe what was said and append it to the note with a timestamp."""
+        import numpy as np
+
+        from engine import tidy
+
+        opts = self.transcribe_opts()
+        offset, carry = 0.0, np.zeros(0, np.float32)
+        while True:
+            stopped = m["stop"].wait(MEETING_CHUNK_S)
+            wave = np.concatenate([carry, m["rec"].drain()])
+            carry = np.zeros(0, np.float32)
+            if stopped:
+                m["rec"].stop()
+            elif len(wave) > 4 * audio.SR:
+                # end the chunk at the quietest moment of its last 2 s, so a word is not cut in half
+                frame = audio.SR // 20
+                tail = wave[-2 * audio.SR:]
+                energy = [float(np.mean(tail[i:i + frame] ** 2)) for i in range(0, len(tail) - frame, frame)]
+                cut = len(wave) - len(tail) + int(np.argmin(energy)) * frame + frame // 2
+                wave, carry = wave[:cut], wave[cut:]
+            if len(wave) > audio.SR:
+                try:
+                    text, _ = self.engine.transcribe(wave, opts)
+                except RuntimeError as e:
+                    text = ""
+                    log.warning("meeting chunk failed: %s", e)
+                text = apply_dictionary(text, dictionary_terms(self.settings))
+                text = tidy(text) if self.settings["tidy"] else text
+                if text.strip():
+                    stamp = time.strftime("%H:%M:%S", time.gmtime(offset))
+                    m["parts"].append((stamp, text))
+                    self._meeting_save(m)
+                    self.push("meeting", {"note_id": m["note_id"], "state": "recording", "start": m["start"],
+                                          "html": self._meeting_html(m)})
+            offset += len(wave) / audio.SR
+            if stopped:
+                break
+        self.push("meeting", {"note_id": m["note_id"], "state": "summarising", "start": m["start"]})
+        summary = self._meeting_summary(" ".join(t for _, t in m["parts"]))
+        m["summary"] = summary
+        self._meeting_save(m)
+        self.meeting = None
+        self.push("meeting", {"note_id": m["note_id"], "state": "done", "html": self._meeting_html(m)})
+        self.push("notes", self.notes.list())
+
+    def _meeting_html(self, m):
+        from html import escape
+
+        body = ""
+        if m.get("summary"):
+            body += m["summary"]
+        body += "<h2>Transcript</h2>" + "".join(f"<p><b>[{s}]</b> {escape(t)}</p>" for s, t in m["parts"])
+        if not m["parts"]:
+            body += "<p><i>Nothing was heard.</i></p>"
+        return body
+
+    def _meeting_save(self, m):
+        preview = " ".join(t for _, t in m["parts"])[:160]
+        self.notes.save(m["note_id"], m["title"], self._meeting_html(m), preview)
+
+    def _meeting_summary(self, transcript):
+        """A summary and action items from the AI writing model, as HTML (empty if no AI is available)."""
+        from html import escape
+
+        if len(transcript.split()) < 25:
+            return ""
+        s = self.settings
+        ask = lambda text: ai.rewrite(text, "", s["ai_provider"], secrets_store.unprotect(s["ai_key"]), s["ai_model"],
+                                      s["ai_base_url"], local=self._local_rewrite, system=ai.SUMMARY_SYSTEM, timeout=120)
+        try:
+            if len(transcript) > 9000:  # too long for a small model at once: summarise parts, then the parts
+                parts = [transcript[i:i + 8000] for i in range(0, len(transcript), 8000)]
+                transcript = "\n".join(ask(p) for p in parts)
+            out = ask(transcript)
+        except ai.AIError as e:
+            log.warning("meeting summary failed: %s", e)
+            return f"<p><i>No summary: {escape(str(e))}</i></p>"
+        html, items = [], []
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(("-", "*", "•")):
+                item = line.lstrip("-*• ").strip()
+                if item.lower().rstrip(".") not in ("none", "n/a"):  # small models add '- None' even after real items
+                    items.append(f"<li>{escape(item)}</li>")
+                continue
+            if items:
+                html.append("<ul>" + "".join(items) + "</ul>")
+                items = []
+            head = line.rstrip(":").strip().lower()
+            html.append("<h2>Action items</h2>" if head.startswith("action") else
+                        "<h2>Summary</h2>" if head.startswith("summary") else f"<p>{escape(line)}</p>")
+        if items:
+            html.append("<ul>" + "".join(items) + "</ul>")
+        if html and html[-1] == "<h2>Action items</h2>":
+            html.pop()  # nobody agreed to do anything
+        return "".join(html)
 
     # window ------------------------------------------------------------------------
     def style_titlebar(self):
@@ -733,6 +991,10 @@ class Api:
         app.apply_settings()
         if "theme" in changes:
             app.style_titlebar()
+        if "start_with_windows" in changes:
+            set_autostart(bool(changes["start_with_windows"]))
+        if "widget" in changes:
+            app.post("widget", bool(changes["widget"]))
         return app.public_settings()
 
     # AI modes
@@ -788,7 +1050,8 @@ class Api:
         for m in modes:
             clean.append({"id": str(m["id"])[:40], "name": str(m.get("name", "Mode"))[:40] or "Mode",
                           "icon": m.get("icon", "sparkles"), "instructions": str(m.get("instructions", ""))[:4000],
-                          "hotkey": str(m.get("hotkey", ""))[:40]})
+                          "hotkey": str(m.get("hotkey", ""))[:40],
+                          "apps": [str(a).lower()[:80] for a in m.get("apps", [])][:30]})
         if not any(m["id"] == "plain" for m in clean):
             clean.insert(0, dict(ai.BUILTIN_MODES[0]))
         app.settings["modes"] = clean
@@ -822,6 +1085,45 @@ class Api:
         app.settings.save()
         app._open_stores()
         return app.full_state()
+
+    # meeting recorder
+    def meeting_start(self):
+        try:
+            return {"note_id": self._app.meeting_start()}
+        except Exception as e:
+            log.exception("meeting start failed")
+            return {"error": str(e)}
+
+    def meeting_stop(self):
+        self._app.meeting_stop()
+
+    def meeting_state(self):
+        m = self._app.meeting
+        return {"note_id": m["note_id"], "start": m["start"]} if m else None
+
+    # first-run walkthrough: microphone check
+    def mic_test(self, on):
+        app = self._app
+        if on and not app.test_rec:
+            app.test_rec = audio.Recorder()
+            try:
+                app.test_rec.start(app.settings["microphone"])
+            except Exception as e:
+                app.test_rec = None
+                return str(e)
+        elif not on and app.test_rec:
+            app.test_rec.stop()
+            app.test_rec = None
+        return None
+
+    def recent_apps(self):
+        """Apps recently dictated into, for per-app modes."""
+        seen = []
+        for e in reversed(self._app.history.items):
+            a = e.get("app")
+            if a and a != "file" and a not in seen:
+                seen.append(a)
+        return seen[:20]
 
     def capture_shortcut(self, on):
         """While the user records a new shortcut, the global hotkeys must not fire."""
@@ -966,6 +1268,22 @@ class Api:
         return True
 
 
+def set_autostart(on):
+    """Start with Windows: a per-user Run entry that opens Parlo quietly in the tray."""
+    import winreg
+
+    key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key, 0, winreg.KEY_SET_VALUE) as k:
+        if on:
+            pythonw = Path(sys.executable).with_name("pythonw.exe").resolve()
+            winreg.SetValueEx(k, "Parlo", 0, winreg.REG_SZ, f'"{pythonw}" "{Path(__file__).resolve()}" --tray')
+        else:
+            try:
+                winreg.DeleteValue(k, "Parlo")
+            except FileNotFoundError:
+                pass
+
+
 def main():
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
@@ -982,10 +1300,14 @@ def main():
         ctypes.windll.user32.MessageBoxW(None, "Parlo is already running (see the tray icon).", "Parlo", 0x40)
         return
     app = App()
+    if app.settings["start_with_windows"]:
+        set_autostart(True)  # rewrite the entry in case the Parlo folder was moved
+    in_tray = "--tray" in sys.argv  # started with Windows: stay in the tray until opened
     window = webview.create_window(
         "Parlo", url=str(WEB / "index.html"), js_api=Api(app), width=1120, height=740, min_size=(880, 580),
-        background_color="#0e0e11" if app.settings["theme"] != "light" else "#f6f6f8")
+        background_color="#0e0e11" if app.settings["theme"] != "light" else "#f6f6f8", hidden=in_tray)
     app.window = window
+    app.window_visible = not in_tray
     window.events.closing += app.on_closing
     window.events.shown += app.on_shown
     webview.start(gui="edgechromium", icon=str(DATA / "icon.ico"))

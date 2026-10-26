@@ -46,13 +46,14 @@ class WhisperEngine:
                                   cpu_threads=max(1, os.cpu_count() or 1))
         self.transcribe(np.zeros(16000, np.float32) + 1e-2 * np.random.randn(16000).astype(np.float32))
 
-    def transcribe(self, wave, language=None):
+    def transcribe(self, wave, language=None, prompt=None):
+        """language: a code like 'fr' or None to detect it; prompt: words to expect (the user's dictionary)."""
         wave = np.asarray(wave, np.float32)
         if len(wave) < 4800 or float(np.abs(wave).max(initial=0.0)) < 1e-3:
             return ""
         segments, _ = self.model.transcribe(
-            wave, language=None if self.multilingual and not language else (language or "en"),
-            beam_size=1, vad_filter=True, condition_on_previous_text=False)
+            wave, language=(language or None) if self.multilingual else "en",
+            beam_size=1, vad_filter=True, condition_on_previous_text=False, initial_prompt=prompt or None)
         return " ".join(s.text.strip() for s in segments).strip()
 
 
@@ -89,8 +90,10 @@ def main():
             break
         if msg[0] == "transcribe":
             t0 = time.time()
+            opts = msg[2] if len(msg) > 2 else {}
             try:
-                text = engine.transcribe(msg[1])
+                # Bark (Parakeet) has no prompt or language options; the app fixes dictionary words afterwards
+                text = engine.transcribe(msg[1], **opts) if isinstance(engine, WhisperEngine) else engine.transcribe(msg[1])
                 conn.send(("result", text, round(time.time() - t0, 2)))
             except Exception as e:
                 log.exception("transcription failed")

@@ -10,7 +10,11 @@ function boot() {
   if (API) return;
   API = window.pywebview ? window.pywebview.api : demoApi();
   hydrateIcons();
-  API.ui_ready().then((st) => { Object.assign(S, st); renderAll(); go(location.hash.slice(1) || "home"); });
+  API.ui_ready().then(async (st) => {
+    Object.assign(S, st); renderAll(); go(location.hash.slice(1) || "home");
+    const m = await API.meeting_state(); if (m) { S.meeting = { ...m, state: "recording" }; renderMeeting(); }
+    if (!S.settings.onboarded) startTour();
+  });
 }
 if (window.pywebview && window.pywebview.api) boot(); else window.addEventListener("pywebviewready", boot);
 if (location.search.includes("demo")) boot(); // index.html?demo in a normal browser, for design work
@@ -23,10 +27,12 @@ window.onBark = (kind, data) => {
   else if (kind === "level") {
     const v = Math.min(1, data);
     const r = $("#noteMic .ring"); if (r && S.status?.target === "note") r.style.transform = `scale(${0.6 + v * 0.9})`;
+    const tm = $("#tourMeter"); if (tm) tm.style.width = `${Math.min(100, Math.sqrt(v) * 160)}%`;
     $$("#heroOrb .wave i").forEach((b, i) => { b.style.height = `${8 + v * 30 * (0.55 + 0.45 * Math.abs(Math.sin(Date.now() / 140 + i * 1.7)))}px`; });
   }
   else if (kind === "toast") { toast(data); }
   else if (kind === "settings") { S.settings = data; applyTheme(); renderSettings(); renderHome(); renderModes(); }
+  else if (kind === "meeting") { onMeeting(data); }
   else if (kind === "notes") { S.notes = data; renderNotesList(); }
   else if (kind === "llms") { S.llms = data; renderLlms(); }
   else if (kind === "tts") { S.tts = data; renderRead(); }
@@ -174,11 +180,12 @@ function renderHome() {
   $("#recentList").innerHTML = recent.length ? recent.map(itemHtml).join("") :
     `<div class="empty">Nothing yet. Press ${keysHtml(s.dictate_hotkey)} in any app and say something.</div>`;
   hydrateIcons($("#recentList"));
+  renderActivity();
 }
 function itemHtml(e) {
   const words = e.text.split(/\s+/).filter(Boolean).length;
   return `<div class="item" data-t="${e.t}"><div class="text"><div class="t">${esc(e.text)}</div>
-    <div class="meta"><span>${when(e.t)}</span><span>${words} words</span><span>${e.secs}s audio</span>${e.mode ? `<span class="badge" title="${esc("Before AI: " + (e.raw || ""))}">${icon("sparkles")}${esc(e.mode)}</span>` : ""}</div></div>
+    <div class="meta"><span>${when(e.t)}</span><span>${words} words</span><span>${e.secs}s audio</span>${e.app && e.app !== "file" ? `<span>${esc(appName(e.app))}</span>` : ""}${e.mode ? `<span class="badge" title="${esc("Before AI: " + (e.raw || ""))}">${icon("sparkles")}${esc(e.mode)}</span>` : ""}</div></div>
     <div class="tools"><button class="tool" data-act="copy" title="Copy"><span data-icon="copy"></span></button>
     <button class="tool" data-act="speak" title="Read aloud"><span data-icon="speaker"></span></button>
     <button class="tool danger" data-act="del" title="Delete"><span data-icon="trash"></span></button></div></div>`;
@@ -339,7 +346,7 @@ function renderSettings() {
   renderRead();
   $("#rateSel").value = s.rate;
   if (document.activeElement !== $("#replText")) $("#replText").value = s.replacements;
-  renderSync();
+  renderSync(); renderExtraSettings();
 }
 $$(".seg[data-setting]").forEach((seg) => (seg.onclick = (e) => { const b = e.target.closest("button"); if (b) saveSetting(seg.dataset.setting, b.dataset.v); }));
 $$("input[type=checkbox][data-setting]").forEach((c) => (c.onchange = () => saveSetting(c.dataset.setting, c.checked)));
@@ -385,6 +392,7 @@ function renderModes() {
         <button class="btn ghost sm" data-mact="key">${m.hotkey ? "Change" : "Add"}</button>
         ${m.hotkey ? `<button class="btn ghost sm" data-mact="nokey">Remove</button>` : ""}
         <span class="grow"></span>${m.id === "plain" ? "" : `<button class="tool danger" data-mact="del" title="Delete mode">${icon("trash")}</button>`}</div>
+      ${appChips(m)}
     </div>`).join("");
 }
 function renderLlms() {
@@ -678,6 +686,146 @@ function applyTokens(tokens) {
   scheduleSave(300);
 }
 
+// ---------- activity dashboard ----------
+const APP_NAMES = { "outlook.exe": "Outlook", "olk.exe": "Outlook", "slack.exe": "Slack", "chrome.exe": "Chrome", "msedge.exe": "Edge",
+  "firefox.exe": "Firefox", "brave.exe": "Brave", "winword.exe": "Word", "code.exe": "VS Code", "notepad.exe": "Notepad",
+  "teams.exe": "Teams", "ms-teams.exe": "Teams", "discord.exe": "Discord", "whatsapp.exe": "WhatsApp", "notion.exe": "Notion",
+  "obsidian.exe": "Obsidian", "pythonw.exe": "Parlo", "python.exe": "Parlo", "claude.exe": "Claude", "excel.exe": "Excel", "powerpnt.exe": "PowerPoint" };
+const appName = (exe) => APP_NAMES[exe] || exe.replace(/\.exe$/i, "").replace(/^./, (c) => c.toUpperCase());
+function renderActivity() {
+  const st = S.stats; if (!st || !st.days) return;
+  const max = Math.max(1, ...st.days.map((d) => d.words));
+  $("#actChart").innerHTML = st.days.map((d, i) => `<div class="bar ${i === st.days.length - 1 ? "today" : ""} ${d.words ? "" : "zero"}" title="${esc(d.date)}: ${d.words} words">
+    <i style="height:${Math.max(3, (d.words / max) * 100)}%; --i:${i}"></i><small>${esc(d.date.slice(0, 2))}</small></div>`).join("");
+  countTo($("#actStreak"), st.streak);
+  countTo($("#actWpm"), st.wpm);
+  $(".flame").classList.toggle("lit", st.streak >= 2);
+  $("#actWeek").textContent = `${st.week_words.toLocaleString()} words in the last 7 days` + (st.best_day ? ` · best day ${st.best_day.date} (${st.best_day.words.toLocaleString()})` : "");
+  $("#actApps").innerHTML = st.top_apps.length ? st.top_apps.map((a) => `<span class="tag">${esc(appName(a.app))} · ${a.words.toLocaleString()}</span>`).join("")
+    : `<span class="muted small">The apps you dictate into most appear here.</span>`;
+}
+
+// ---------- per-app modes ----------
+function appChips(m) {
+  return `<div class="app-chips"><span class="muted small">Use automatically in</span>${(m.apps || []).map((a) =>
+    `<span class="app-chip">${esc(appName(a))}<button data-mact="rmapp" data-app="${esc(a)}" title="Remove">${icon("x")}</button></span>`).join("")}
+    <button class="btn ghost sm app-add" data-mact="addapp">${icon("plus")}App</button></div>`;
+}
+async function addAppDialog(modeId) {
+  const recent = (await API.recent_apps()) || [];
+  modal("Use this mode automatically in…", `<p class="muted small" style="margin:0 0 10px">When you dictate into one of these apps, Parlo switches to this mode by itself.</p>
+    <div class="hf-files">${recent.map((a) => `<label><input type="checkbox" value="${esc(a)}"><span class="grow">${esc(appName(a))}</span><span class="muted small">${esc(a)}</span></label>`).join("")
+      || `<p class="muted small">Dictate into a few apps first and they'll be listed here, or type the program name below.</p>`}</div>
+    <input type="text" id="appExe" placeholder="or type a program, e.g. outlook.exe" spellcheck="false" style="width:100%;margin-top:10px">`,
+    [["Cancel", "ghost", () => {}], ["Add", "primary", () => {
+      const m = S.settings.modes.find((x) => x.id === modeId);
+      const picked = $$("#modal input[type=checkbox]:checked").map((c) => c.value);
+      const typed = $("#appExe").value.trim().toLowerCase();
+      if (typed) picked.push(typed.endsWith(".exe") ? typed : typed + ".exe");
+      if (!picked.length) return;
+      S.settings.modes.forEach((o) => { o.apps = (o.apps || []).filter((a) => !picked.includes(a)); }); // one mode per app
+      m.apps = [...new Set([...(m.apps || []), ...picked])];
+      saveModes();
+    }]]);
+}
+$("#modeList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mact=addapp], [data-mact=rmapp]"); if (!b) return;
+  const id = b.closest(".mode-card").dataset.id, m = S.settings.modes.find((x) => x.id === id);
+  if (b.dataset.mact === "addapp") addAppDialog(id);
+  else { m.apps = (m.apps || []).filter((a) => a !== b.dataset.app); saveModes(); }
+});
+
+// ---------- settings: language, dictionary, walkthrough ----------
+const LANGS = [["auto", "Detect automatically"], ["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["it", "Italian"],
+  ["pt", "Portuguese"], ["nl", "Dutch"], ["pl", "Polish"], ["tr", "Turkish"], ["ru", "Russian"], ["uk", "Ukrainian"], ["ar", "Arabic"],
+  ["hi", "Hindi"], ["zh", "Chinese"], ["ja", "Japanese"], ["ko", "Korean"], ["sv", "Swedish"], ["da", "Danish"], ["no", "Norwegian"], ["fi", "Finnish"]];
+$("#langSel").innerHTML = LANGS.map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
+$("#langSel").onchange = (e) => saveSetting("language", e.target.value);
+$("#saveDict").onclick = async () => { await saveSetting("dictionary", $("#dictText").value); toast("Dictionary saved", "check"); };
+$("#replayTour").onclick = () => startTour();
+function renderExtraSettings() {
+  const s = S.settings; if (!s) return;
+  $("#editKeys").innerHTML = keysHtml(s.edit_hotkey);
+  $("#langSel").value = s.language || "auto";
+  const multi = (S.models || []).some((m) => m.active && m.languages !== "English");
+  $("#langNote").textContent = multi ? "Your model understands many languages." : "Other languages need a multilingual model, such as Whisper Large v3 Turbo.";
+  if (document.activeElement !== $("#dictText")) $("#dictText").value = s.dictionary || "";
+}
+
+// ---------- meeting recorder ----------
+let meetTimer = null;
+function renderMeeting() {
+  const m = S.meeting, btn = $("#meetBtn");
+  btn.classList.toggle("live", !!m && m.state === "recording");
+  btn.classList.toggle("busy", !!m && m.state === "summarising");
+  clearInterval(meetTimer);
+  if (m && m.state === "recording") {
+    const tick = () => { const s = Math.max(0, Math.floor(Date.now() / 1000 - m.start)); $("#meetLabel").textContent = `Stop · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+    tick(); meetTimer = setInterval(tick, 1000);
+  } else $("#meetLabel").textContent = m && m.state === "summarising" ? "Writing the summary…" : "Record a meeting";
+  const live = !!m && !!S.note && S.note.id === m.note_id;
+  $("#noteBody").contentEditable = live ? "false" : "true";
+}
+$("#meetBtn").onclick = async () => {
+  if (S.meeting && S.meeting.state === "summarising") return;
+  if (S.meeting) { API.meeting_stop(); S.meeting.state = "summarising"; renderMeeting(); return; }
+  const r = await API.meeting_start();
+  if (!r || r.error) return toast((r && r.error) || "Could not start recording");
+  S.meeting = { ...(S.meeting || {}), note_id: r.note_id, state: "recording", start: S.meeting?.start || Date.now() / 1000 };
+  await openNote(r.note_id); renderMeeting();
+  toast("Recording. The transcript is added every 30 seconds.", "mic");
+};
+function onMeeting(d) {
+  S.meeting = d.state === "done" ? null : { ...(S.meeting || {}), ...d };
+  if (d.html && S.note && S.note.id === d.note_id) { $("#noteBody").innerHTML = d.html; S.note.html = d.html; }
+  if (d.state === "done") toast("Meeting saved with a summary", "check");
+  renderMeeting();
+}
+
+// ---------- first-run walkthrough ----------
+let tourStep = 0, tourWatch = null;
+const TOUR = [
+  () => `<img class="big-logo" src="logo.svg" alt=""><h2>Welcome to Parlo</h2>
+    <p>Talk, and your words appear in any app: emails, chats, documents. Everything runs on this PC: no account, no cloud, free.</p>
+    <p class="muted">This quick tour checks your microphone and gets you dictating in under a minute.</p>`,
+  () => `<h2>${icon("mic")}Check your microphone</h2><p>Say something. The bar should move while you talk.</p>
+    <div class="meter"><i id="tourMeter"></i></div>
+    <div class="setting"><div><b>Microphone</b></div><select id="tourMic"><option value="">System default</option>${(S.mics || []).map((m) => `<option ${m === S.settings.microphone ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>`,
+  () => `<h2>${icon("keyboard")}Try your first dictation</h2>
+    <p>Click in the box, press <span class="keys">${keysHtml(S.settings.dictate_hotkey)}</span>, say <i>"Hello Parlo, this is my first dictation"</i>, then press it again.</p>
+    <textarea id="tourBox" rows="3" placeholder="Your words will appear here…"></textarea><p id="tourOk"></p>`,
+  () => `<h2>${icon("sparkles")}Make it yours</h2>
+    <p><b>AI modes</b> can remove filler words or turn rambling into an email, free on your PC. Pick how Parlo starts:</p>
+    <div class="seg" id="tourMode"><button data-v="plain">Exactly what I say</button><button data-v="clean">Clean up</button></div>
+    <p class="muted" style="margin-top:14px">Also worth a look: <b>Notes</b> for voice notes and meetings, <b>Read aloud</b> for natural voices, and
+      <b>Settings</b> for your dictionary, the floating mic button and start with Windows.</p>`,
+];
+function startTour() { tourStep = 0; $("#tour").hidden = false; renderTour(); }
+function renderTour() {
+  clearInterval(tourWatch);
+  $("#tourDots").innerHTML = TOUR.map((_, i) => `<i class="${i === tourStep ? "on" : ""}"></i>`).join("");
+  const body = $("#tourBody"); body.innerHTML = TOUR[tourStep]();
+  body.style.animation = "none"; void body.offsetWidth; body.style.animation = "";
+  $("#tourBack").hidden = tourStep === 0;
+  $("#tourNext").textContent = tourStep === TOUR.length - 1 ? "Start using Parlo" : "Next";
+  API.mic_test(tourStep === 1);
+  if (tourStep === 1) $("#tourMic").onchange = async (e) => { await saveSetting("microphone", e.target.value || null); await API.mic_test(false); API.mic_test(true); };
+  if (tourStep === 2) {
+    const count = S.history.length; $("#tourBox").focus();
+    tourWatch = setInterval(() => {
+      if (S.history.length > count) { $("#tourOk").innerHTML = `<span class="ok">${icon("check")}That worked. You're ready.</span>`; clearInterval(tourWatch); }
+    }, 300);
+  }
+  if (tourStep === 3) {
+    $$("#tourMode button").forEach((b) => b.classList.toggle("on", b.dataset.v === S.settings.active_mode));
+    $("#tourMode").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; saveSetting("active_mode", b.dataset.v); $$("#tourMode button").forEach((x) => x.classList.toggle("on", x === b)); };
+  }
+}
+async function endTour() { clearInterval(tourWatch); API.mic_test(false); $("#tour").hidden = true; await saveSetting("onboarded", true); }
+$("#tourNext").onclick = () => { if (tourStep < TOUR.length - 1) { tourStep++; renderTour(); } else endTour(); };
+$("#tourBack").onclick = () => { if (tourStep > 0) { tourStep--; renderTour(); } };
+$("#tourSkip").onclick = endTour;
+
 // ---------- demo mode (opened in a normal browser, for design work) ----------
 function demoApi() {
   const now = Date.now() / 1000;
@@ -686,9 +834,10 @@ function demoApi() {
       microphone: null, sounds: true, tidy: true, trailing_space: true, replacements: "open ai => OpenAI", voice: "Microsoft Zira Desktop", rate: 0, theme: "dark",
       tts_engine: "kokoro", kokoro_voice: "af_heart",
       overlay_style: "pill", live_preview: true, sync_folder: "", ai_provider: "local", llm_model: "qwen2.5-1.5b", ai_model: "", ai_base_url: "", ai_key_set: false, active_mode: "clean",
+      dictionary: "Parlo\nKubernetes", language: "auto", edit_hotkey: "ctrl+alt+space", voice_actions: true, widget: false, start_with_windows: false, onboarded: true,
       modes: [{ id: "plain", name: "Plain dictation", hotkey: "", instructions: "" },
               { id: "clean", name: "Clean up", hotkey: "", instructions: "Remove filler words, false starts and repetitions. Fix grammar and punctuation." },
-              { id: "email", name: "Email", hotkey: "ctrl+alt+e", instructions: "Turn this into a clear, friendly email body with short paragraphs." }] },
+              { id: "email", name: "Email", hotkey: "ctrl+alt+e", apps: ["outlook.exe"], instructions: "Turn this into a clear, friendly email body with short paragraphs." }] },
     llms: [{ id: "qwen2.5-1.5b", name: "Qwen2.5 1.5B", family: "Qwen", license: "Apache-2.0", ram_gb: 1.7, accuracy: 3, speed: 5, secs: "1-2 s", size_mb: 1066, installed: true, active: true, loaded: true, blurb: "Recommended. Fast on any everyday PC; good clean-ups and bullet lists." },
            { id: "qwen3-1.7b", name: "Qwen3 1.7B", family: "Qwen", license: "Apache-2.0", ram_gb: 2, accuracy: 4, speed: 3, secs: "3-4 s", size_mb: 1749, installed: true, active: false, blurb: "Sticks most closely to your own words. A little slower." },
            { id: "custom-qwen3-8b-q4_k_m", name: "Qwen3-8B-Q4_K_M", family: "Qwen", license: "apache-2.0", ram_gb: 6.0, accuracy: 0, speed: 0, secs: "untested", size_mb: 4790, installed: true, active: false, custom: true, blurb: "Your own model from Qwen/Qwen3-8B-GGUF. Untested by Parlo." },
@@ -697,9 +846,11 @@ function demoApi() {
     providers: { local: { name: "On this PC (free)", note: "Free, private and offline: a small AI model runs on your own computer." }, groq: { name: "Groq", model: "llama-3.3-70b-versatile", note: "Free tier available. Very fast.", key_url: "x" },
                  ollama: { name: "Ollama (on this PC)", model: "llama3.2:3b", base: "http://localhost:11434/v1", note: "Free and private." } },
     status: { engine: "ready", model: "Bark 3.0", model_id: "bark-3.0", state: "idle", target: "insert" },
-    stats: { today_words: 412, total_words: 18230, count: 964, saved_min: 395 },
+    stats: { today_words: 412, total_words: 18230, count: 964, saved_min: 395, streak: 6, wpm: 142, week_words: 3120,
+      best_day: { date: "Thu 22 Oct", words: 806 }, top_apps: [{ app: "outlook.exe", words: 6120 }, { app: "slack.exe", words: 4210 }, { app: "code.exe", words: 1990 }],
+      days: [120, 0, 340, 512, 280, 0, 0, 430, 610, 806, 390, 0, 470, 412].map((w, i) => ({ date: new Date((now - (13 - i) * 86400) * 1000).toDateString().slice(0, 10), words: w })) },
     history: [
-      { t: now - 60, text: "Please send the quarterly report to the finance team by Friday.", secs: 5.5 },
+      { t: now - 60, text: "Please send the quarterly report to the finance team by Friday.", secs: 5.5, app: "outlook.exe" },
       { t: now - 3600, text: "I would like two coffees and a blueberry muffin, thank you.", secs: 4.5 },
       { t: now - 7200, text: "Remind me to call the landlord about the boiler tomorrow morning.", secs: 4.1 },
       { t: now - 90000, text: "The new design looks a lot cleaner. Let's ship it on Monday.", secs: 3.9 },
@@ -722,6 +873,7 @@ function demoApi() {
     note_save: () => ok(Date.now() / 1000), save_settings: (c) => ok(Object.assign(st.settings, c)),
     save_modes: (m, a) => ok(Object.assign(st.settings, { modes: m, active_mode: a })), save_ai: () => ok(st.settings),
     inspect_hf: () => ok({ ok: true, repo: "Qwen/Qwen3-8B-GGUF", license: "apache-2.0", choices: [{ file: "Qwen3-8B-Q4_K_M.gguf", mb: 4790 }, { file: "Qwen3-8B-Q5_K_M.gguf", mb: 5600 }, { file: "Qwen3-8B-Q8_0.gguf", mb: 8340 }] }), delete_history: () => ok(st.stats), clear_history: () => ok(st.stats),
-    engine_memory: () => ok(3150), note_record: () => { setTimeout(() => window.onBark("note_insert", [{ t: "text", v: "Here is a dictated sentence." }, { t: "bullet" }, { t: "text", v: "First point" }]), 300); return ok(); },
+    engine_memory: () => ok(3150), recent_apps: () => ok(["outlook.exe", "slack.exe", "chrome.exe"]),
+    meeting_start: () => { setTimeout(() => window.onBark("meeting", { note_id: "a", state: "recording", start: Date.now() / 1000, html: "<h2>Transcript</h2><p><b>[00:00:00]</b> Okay, let's get started with the weekly sync.</p>" }), 400); return ok({ note_id: "a" }); }, note_record: () => { setTimeout(() => window.onBark("note_insert", [{ t: "text", v: "Here is a dictated sentence." }, { t: "bullet" }, { t: "text", v: "First point" }]), 300); return ok(); },
   }[name] || (() => ok(null))) });
 }

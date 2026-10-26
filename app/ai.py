@@ -6,6 +6,7 @@ OpenAI-compatible chat completions for most, the Messages API for Anthropic.
 """
 import json
 import logging
+import re
 import urllib.error
 import urllib.request
 
@@ -78,14 +79,46 @@ def system_prompt(instructions):
     return f"{SYSTEM}\n\nMode instructions:\n{instructions}"
 
 
-def rewrite(text, instructions, provider, api_key, model="", base_url="", timeout=25, local=None):
+EDIT_SYSTEM = (
+    "You are a writing assistant controlled by voice. You get an INSTRUCTION the user spoke and, "
+    "if they had text selected, that TEXT. Apply the instruction to the text (rewrite, shorten, translate, "
+    "change tone, fix...). If there is no text, write what the instruction asks for. Keep the original "
+    "language unless asked to translate. Reply with the resulting text only: no preface, no quotes."
+)
+SUMMARY_SYSTEM = (
+    "You summarise meeting transcripts. Reply in this exact plain format, nothing else:\n"
+    "SUMMARY\n- 3 to 6 short bullet points with the key points and decisions\n"
+    "ACTION ITEMS\n- one bullet per task someone said they or another person will do, starting with the "
+    "person's name if given (write '- None' only if nobody agreed to do anything)\n"
+    "Use only what is in the transcript."
+)
+
+CHATTER = re.compile(r"^(sure|certainly|of course|okay|ok|absolutely)\b[,.!:]*\s+", re.I)
+PREFACE = re.compile(r"^(here(?:'s| is| are)\b[^\n]{0,60}:)\s*", re.I)
+
+
+def strip_chatter(out, given):
+    """Remove an assistant-style opener the speaker did not say themselves."""
+    first = given.strip().split(" ", 1)[0].lower().strip(",.!:")
+    m = CHATTER.match(out)
+    if m and m.group(1).lower() != first and len(out) > m.end():
+        out = out[m.end()].upper() + out[m.end() + 1:]
+    m = PREFACE.match(out)
+    if m and len(out) > m.end():
+        out = out[m.end():]
+    return out.strip().strip('"').strip()
+
+
+def rewrite(text, instructions, provider, api_key, model="", base_url="", timeout=25, local=None, system=None):
     """Returns the rewritten text. Raises AIError with a readable message on failure.
-    local(system, text) runs the on-PC model when provider == 'local'."""
+    local(system, text) runs the on-PC model when provider == 'local'.
+    system replaces the default dictation-editing prompt (used for edit-by-voice and summaries)."""
     p = PROVIDERS.get(provider)
     if not p:
         raise AIError("Choose an AI provider in AI modes first.")
+    system = system or system_prompt(instructions)
     if provider == "local":
-        out = local(system_prompt(instructions), text).strip().strip('"').strip()
+        out = strip_chatter(local(system, text).strip().strip('"').strip(), text)
         if not out:
             raise AIError("The local AI model returned an empty answer.")
         return out
@@ -95,7 +128,6 @@ def rewrite(text, instructions, provider, api_key, model="", base_url="", timeou
         raise AIError("Enter the service address and model name.")
     if provider not in ("ollama", "custom") and not api_key:
         raise AIError(f"Add your {p['name']} API key in AI modes.")
-    system = system_prompt(instructions)
     if provider == "anthropic":
         r = _post(f"{base}/messages", {"x-api-key": api_key, "anthropic-version": "2023-06-01"},
                   {"model": model, "max_tokens": 2048, "system": system,
@@ -110,7 +142,7 @@ def rewrite(text, instructions, provider, api_key, model="", base_url="", timeou
             out = r["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
             raise AIError("The AI service sent an answer Parlo could not read.")
-    out = (out or "").strip().strip('"').strip()
+    out = strip_chatter((out or "").strip().strip('"').strip(), text)
     if not out:
         raise AIError("The AI service returned an empty answer.")
     return out

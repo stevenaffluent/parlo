@@ -81,19 +81,20 @@ class EngineClient:
         threading.Thread(target=watchdog, daemon=True).start()
         threading.Thread(target=connect, daemon=True).start()
 
-    def try_transcribe(self, wave):
+    def try_transcribe(self, wave, opts=None):
         """For live previews: transcribe only if the engine is idle right now; returns text or None."""
         if not self.lock.acquire(blocking=False):
             return None
         self.lock.release()  # transcribe() takes it again; a final transcription may slip in first, which is fine
         try:
-            return self.transcribe(wave)[0]
+            return self.transcribe(wave, opts)[0]
         except RuntimeError:
             return None
 
-    def transcribe(self, wave):
-        """Returns (text, seconds). Raises RuntimeError if the engine is not available."""
-        return self.call("transcribe", wave)
+    def transcribe(self, wave, opts=None):
+        """Returns (text, seconds). opts: {'language': code|None, 'prompt': words}. Raises RuntimeError
+        if the engine is not available."""
+        return self.call("transcribe", wave, opts or {})
 
     def call(self, *msg):
         """Send one request to the worker and wait for its ("result", value, seconds) reply."""

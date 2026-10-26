@@ -359,3 +359,55 @@ nav { position: relative; }
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   body::before, body::after { animation: none; }
 }
+
+/* ---- activity dashboard ---- */
+.activity { margin-top: 16px; }
+.act-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.act-grid { display: grid; grid-template-columns: 1fr 240px; gap: 22px; align-items: end; }
+.chart { display: flex; align-items: flex-end; gap: 6px; height: 130px; }
+.chart .bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+.chart .bar i { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 45%, transparent));
+  min-height: 3px; transform-origin: bottom; animation: grow .7s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i) * 35ms); opacity: .9; transition: opacity .15s; }
+.chart .bar.today i { background: linear-gradient(180deg, #ffb27f, var(--accent)); box-shadow: 0 0 18px var(--glow); opacity: 1; }
+.chart .bar.zero i { background: var(--surface-2); }
+.chart .bar:hover i { opacity: 1; filter: brightness(1.15); }
+.chart .bar small { font-size: 10.5px; color: var(--muted); }
+@keyframes grow { from { transform: scaleY(0); } }
+.act-side { display: flex; flex-direction: column; gap: 12px; }
+.act-stat { display: flex; gap: 12px; align-items: center; }
+.act-stat > [data-icon] { width: 34px; height: 34px; border-radius: 10px; justify-content: center; background: var(--accent-soft); color: var(--accent); }
+.act-stat b { font-size: 19px; display: block; line-height: 1.15; } .act-stat small { color: var(--muted); font-size: 12px; }
+.flame.lit { animation: flicker 1.8s ease-in-out infinite; }
+@keyframes flicker { 50% { box-shadow: 0 0 16px var(--glow); transform: scale(1.06); } }
+.act-apps { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---- per-app modes ---- */
+.app-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.app-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 4px 3px 9px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); }
+.app-chip button { border: 0; background: none; color: var(--muted); cursor: pointer; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.app-chip button:hover { background: var(--hover); color: var(--text); } .app-chip .i { width: 12px; height: 12px; }
+.app-add { font-size: 12px; padding: 3px 8px; border-radius: 99px; }
+
+/* ---- meeting recorder ---- */
+.meet-btn { width: 100%; justify-content: center; margin-bottom: 12px; }
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); flex: none; }
+.meet-btn.live { border-color: color-mix(in srgb, var(--red) 55%, var(--border)); color: var(--red); background: rgba(255, 99, 99, .08); }
+.meet-btn.live .rec-dot { animation: blink 1s infinite; }
+.meet-btn.busy .rec-dot { background: var(--amber); animation: blink .6s infinite; }
+.note-body[contenteditable="false"] { opacity: .92; }
+
+/* ---- first-run walkthrough ---- */
+.tour { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(5, 5, 8, .55); backdrop-filter: blur(8px); animation: fadein .25s ease; }
+.tour-card { width: min(560px, 92vw); background: var(--glass-strong); backdrop-filter: blur(26px) saturate(160%); border: 1px solid var(--glass-edge); border-radius: 20px;
+  padding: 28px 30px 22px; box-shadow: 0 30px 90px rgba(0, 0, 0, .5); animation: zoomin .3s cubic-bezier(.2, .8, .2, 1); }
+.tour-dots { display: flex; gap: 6px; margin-bottom: 18px; }
+.tour-dots i { height: 5px; width: 18px; border-radius: 3px; background: color-mix(in srgb, var(--control) 55%, transparent); transition: width .3s, background .3s; }
+.tour-dots i.on { width: 34px; background: var(--accent); }
+.tour-body { min-height: 230px; animation: rise .35s cubic-bezier(.2, .8, .2, 1); }
+.tour-body h2 { font-size: 22px; margin: 14px 0 8px; display: flex; align-items: center; gap: 10px; } .tour-body h2 svg { color: var(--accent); width: 22px; height: 22px; } .tour-body p { color: var(--muted); margin: 0 0 12px; line-height: 1.6; }
+.tour-body .big-logo { width: 84px; height: 84px; filter: drop-shadow(0 10px 24px rgba(194, 65, 12, .45)); animation: breathe 3.6s ease-in-out infinite; border-radius: 22px; }
+.tour-foot { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.meter { height: 12px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin: 10px 0; }
+.meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--accent)); border-radius: 99px; transition: width .08s linear; }
+.tour textarea { width: 100%; min-height: 70px; margin-top: 8px; }
+.tour .ok { color: var(--green); font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }

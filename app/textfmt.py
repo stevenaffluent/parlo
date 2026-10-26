@@ -2,6 +2,7 @@
 import re
 
 from engine import tidy
+from spell import is_word
 
 
 def postprocess(text, settings):
@@ -88,15 +89,19 @@ def apply_dictionary(text, terms):
                 chunk = words[i:i + n]
                 cand = letters("".join(chunk))
                 bare = re.sub(r"[^\w' ]+$", "", " ".join(chunk))
-                same_letters = cand == key and bare != term  # 'Open AI' for 'OpenAI'
                 slack = 1 if len(key) <= 6 else 2  # 'parlour' must not become 'Parlo'
+                real_words = all(is_word(re.sub(r"[^A-Za-z]", "", w)) for w in chunk)
+                # same letters, split into words ('Open AI' for 'OpenAI'), or a non-word in the wrong case
+                same_letters = cand == key and bare != term and (len(chunk) > 1 or not real_words)
                 if cand and bare != term and cand[0] == key[0] and abs(len(cand) - len(key)) <= slack \
-                        and (same_letters or SequenceMatcher(None, cand, key).ratio() >= 0.8):
+                        and (same_letters or (not real_words and SequenceMatcher(None, cand, key).ratio() >= (0.72 if len(key) >= 8 else 0.8))):
                     tail = re.search(r"[^\w']*$", chunk[-1]).group(0)  # keep the punctuation after it
                     words[i:i + n] = [term + tail]
                 i += 1
     text = " ".join(words)
     for term in terms:  # exact matches in the wrong case: 'openai' -> 'OpenAI'
+        if term[:1].isupper() and term[1:] == term[1:].lower() and is_word(term):
+            continue  # 'Notion' is also the word 'notion': only a real typo is corrected, not the word
         text = re.sub(r"(?i)(?<!\w)" + re.escape(term) + r"(?!\w)", term, text)
     return text
 

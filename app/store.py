@@ -45,10 +45,19 @@ DEFAULTS = {
     "live_preview": True,
     # sync
     "sync_folder": "",
+    # words the speech model should get right: names, products, jargon (one per line)
+    "dictionary": "",
+    "voice_actions": True,  # "send it", "undo that", "scratch that"...
+    "language": "auto",  # for multilingual Whisper models: auto-detect or a language code
+    "edit_hotkey": "ctrl+alt+space",  # select text, press, say how to change it
+    "widget": False,  # small floating mic button
+    "widget_pos": None,
+    "start_with_windows": False,
+    "onboarded": False,
 }
 # Settings that describe this PC rather than the person; never synced.
 LOCAL_KEYS = {"model", "microphone", "voice", "rate", "device", "tray_hint_shown", "ai_key", "sync_folder",
-              "live_preview", "llm_model", "tts_engine"}
+              "live_preview", "llm_model", "tts_engine", "widget", "widget_pos", "start_with_windows", "onboarded"}
 SYNC_DIRNAME = "Parlo Sync"
 
 
@@ -168,9 +177,11 @@ class History:
             return False
         return True
 
-    def add(self, text, secs, model, raw=None, mode=None):
+    def add(self, text, secs, model, raw=None, mode=None, app=None):
         self.refresh()  # pick up entries a synced PC added meanwhile, so they are not overwritten
         entry = {"t": time.time(), "text": text, "secs": round(secs, 1), "model": model}
+        if app:
+            entry["app"] = app
         if raw and raw != text:
             entry.update(raw=raw, mode=mode)  # the transcript before the AI mode rewrote it
         self.items.append(entry)
@@ -193,8 +204,30 @@ class History:
         spoken_s = sum(e.get("secs", 0) for e in self.items)
         # typing at ~40 wpm versus the time actually spent talking
         saved_min = max(0, total_words / 40 - spoken_s / 60)
+        # last 14 days, oldest first, and the streak of days in a row (up to today or yesterday)
+        day = 86400
+        days = []
+        for back in range(13, -1, -1):
+            start = midnight - back * day
+            es = [e for e in self.items if start <= e["t"] < start + day]
+            days.append({"date": time.strftime("%a %d %b", time.localtime(start + 3600)), "words": words(es)})
+        active = {time.strftime("%Y%m%d", time.localtime(e["t"])) for e in self.items}
+        streak, d = 0, midnight
+        if time.strftime("%Y%m%d", time.localtime(d)) not in active:
+            d -= day  # no dictation yet today: the streak can still be alive from yesterday
+        while time.strftime("%Y%m%d", time.localtime(d)) in active:
+            streak, d = streak + 1, d - day
+        apps = {}
+        for e in self.items:
+            if e.get("app") and e["app"] != "file":
+                apps[e["app"]] = apps.get(e["app"], 0) + len(e["text"].split())
+        top_apps = sorted(apps.items(), key=lambda kv: -kv[1])[:5]
+        wpm = round(total_words / (spoken_s / 60)) if spoken_s > 30 else 0
+        best = max(days, key=lambda x: x["words"]) if days else None
         return {"today_words": words(today), "total_words": total_words, "count": len(self.items),
-                "saved_min": round(saved_min)}
+                "saved_min": round(saved_min), "days": days, "streak": streak, "wpm": wpm,
+                "top_apps": [{"app": a, "words": w} for a, w in top_apps],
+                "week_words": sum(x["words"] for x in days[-7:]), "best_day": best if best and best["words"] else None}
 
     def _write(self):
         self.path.write_text("".join(json.dumps(e) + "\n" for e in self.items), "utf-8")

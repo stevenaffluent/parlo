@@ -82,6 +82,16 @@ class Recorder:
             wave = soxr.resample(wave, self.rate, SR).astype(np.float32)
         return wave
 
+    def drain(self):
+        """Everything recorded since the last drain, at 16 kHz; recording carries on (meeting recorder)."""
+        chunks, self.chunks = self.chunks, []
+        wave = np.concatenate(chunks) if chunks else np.zeros(0, np.float32)
+        if self.rate != SR and len(wave):
+            import soxr
+
+            wave = soxr.resample(wave, self.rate, SR).astype(np.float32)
+        return wave
+
     def stop(self):
         if self.stream is None:
             return np.zeros(0, np.float32)

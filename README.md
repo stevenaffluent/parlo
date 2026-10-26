@@ -29,28 +29,54 @@ tray; closing the window keeps the app running there (right-click the icon to qu
 | Hold **Ctrl + Win** while talking | Push-to-talk: release to stop and insert. |
 | **Esc** while recording | Cancel. |
 | Select text, press **Ctrl + Alt + R** | Read the selection aloud. Press again to stop. |
+| Select text, press **Ctrl + Alt + Space**, say how to change it | Edit by voice: "make this more formal", "shorten this", "translate into French". |
+| End a dictation with "send it" or "press enter" | The text is typed, then Enter is pressed. |
+| Say only "undo that", "scratch that" or "select all" | Parlo does it instead of typing the words. |
+
+The first time Parlo opens, a short walkthrough checks your microphone and has you try a first
+dictation. You can see it again from Settings.
 
 ### The window
 
-- **Home**: your shortcut, the default AI mode, stats (words today, time saved) and recent
-  dictations. *Transcribe a file* turns an audio or video file (wav, mp3, m4a, mp4…) into text.
+- **Home**: your shortcut, the default AI mode, stats (words today, time saved), your activity
+  (a 14-day chart, your daily streak, how fast you speak and the apps you dictate into most) and
+  recent dictations. *Transcribe a file* turns an audio or video file (wav, mp3, m4a, mp4…) into text.
 - **AI modes**: have an AI polish what you said before it's inserted (see below).
 - **Notes**: voice notes with formatting. Press **Dictate**, talk, press it again. Use the
   toolbar for bold, italic, headings, bullet, numbered and check lists, and quotes. Notes save
-  automatically and can be copied, read aloud or saved as Markdown.
+  automatically and can be copied, read aloud or saved as Markdown. **Record a meeting** turns a
+  meeting or lecture into a note: the transcript is added every 30 seconds with timestamps, and
+  when you stop, the on-PC AI adds a summary and action items at the top.
 - **History**: every dictation, searchable, with copy, read-aloud and delete.
 - **Read aloud**: paste text and hear it with any Windows voice.
 - **Models**: choose and download speech models (see below).
 - **Settings**: shortcuts (click *Change* and press the new keys), activation mode, what
   happens after transcribing, microphone, sounds, word replacements, the recording indicator
-  (bottom pill, top capsule, small dot or off, with optional live text), sync between PCs, and
-  dark/light theme.
+  (bottom pill, top capsule, small dot or off, with optional live text), language, voice
+  actions, your personal dictionary, start with Windows, a floating mic button, sync between PCs,
+  and dark/light theme.
+
+### Personal dictionary
+
+In Settings, list the names and jargon Parlo should spell right, one per line (product names,
+colleagues, places). Close mistakes are corrected ("Paulo" becomes *Parlo*, "Kubanetis" becomes
+*Kubernetes*, "git hub" becomes *GitHub*); ordinary words are never changed, so "parlour" stays
+"parlour". Whisper models are also told to expect the words.
+
+### Floating mic button
+
+Turn on *Floating mic button* in Settings for a small Parlo button that stays on top of other
+windows: click it to start and stop dictating, drag it anywhere, right-click to hide it. It never
+takes focus, so your words still go to the app you were typing in.
 
 ### AI modes
 
 Modes rewrite your dictation with an AI before it's typed: **Clean up** (removes "um", false
 starts, fixes grammar), **Email**, **Bullet notes**, **Professional**, or any mode you write
 yourself ("Translate into Spanish", "Write it as a tweet"…). *Plain dictation* uses no AI.
+
+Each mode can also be tied to apps (*Use automatically in*): for example *Email* in Outlook and
+*Clean up* in Slack. Dictating into those apps then uses that mode without switching by hand.
 
 By default this runs **free on your own PC**: a small AI writing model is downloaded during
 setup and nothing is sent anywhere. Pick a mode on Home and dictate as usual.
@@ -121,6 +147,9 @@ on Monday."*
 | Whisper Small | 461 MB | ~1.6 GB | English | Middle ground |
 | Whisper Large v3 Turbo | 1.5 GB | ~2.6 GB | 99 languages | For other languages; slower on CPU |
 
+For languages other than English, use Whisper Large v3 Turbo and set *Language* in Settings
+(or leave it on *Detect automatically*).
+
 Switch models on the **Models** page. The model runs in its own background process, so
 switching really frees the old model's memory.
 
@@ -140,8 +169,8 @@ switching really frees the old model's memory.
 - **Check the model works**: `.venv\Scripts\python.exe app\selftest.py` (a Windows voice
   says a sentence and Bark transcribes it).
 - **Logs**: `data\parlo.log` (app) and `data\engine.log` (speech model).
-- **Uninstall**: quit from the tray icon, delete this folder and the two `Parlo`
-  shortcuts (Desktop and Start Menu).
+- **Uninstall**: turn off *Start with Windows* in Settings, quit from the tray icon, then delete
+  this folder and the two `Parlo` shortcuts (Desktop and Start Menu).
 
 ## Credits and licences
 

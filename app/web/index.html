@@ -44,6 +44,17 @@
         <div class="stat"><span data-icon="bolt"></span><div><b id="stSaved">0 min</b><small>typing time saved</small></div></div>
         <div class="stat"><span data-icon="layers"></span><div><b id="stCount">0</b><small>dictations</small></div></div>
       </div>
+      <div class="activity card" id="activity">
+        <div class="act-head"><h2>Your activity</h2><span class="muted small" id="actWeek"></span></div>
+        <div class="act-grid">
+          <div class="chart" id="actChart"></div>
+          <div class="act-side">
+            <div class="act-stat"><span class="flame" data-icon="bolt"></span><div><b id="actStreak">0</b><small>day streak</small></div></div>
+            <div class="act-stat"><span data-icon="speaker"></span><div><b id="actWpm">0</b><small>words per minute spoken</small></div></div>
+            <div class="act-apps" id="actApps"></div>
+          </div>
+        </div>
+      </div>
       <div class="row-head"><h2>Recent</h2>
         <div class="actions"><button class="btn ghost" id="fileBtn"><span data-icon="upload"></span>Transcribe a file</button>
         <button class="btn ghost" data-goto="history">See all</button></div></div>
@@ -57,6 +68,7 @@
           <div class="search"><span data-icon="search"></span><input id="noteSearch" placeholder="Search notes"></div>
           <button class="icon-btn accent" id="newNote" title="New note"><span data-icon="plus"></span></button>
         </div>
+        <button class="btn ghost meet-btn" id="meetBtn"><span class="rec-dot"></span><span id="meetLabel">Record a meeting</span></button>
         <div id="noteItems"></div>
       </div>
       <div class="editor-wrap" id="editorWrap">
@@ -179,6 +191,8 @@
           <div class="shortcut"><span class="keys" id="dictKeys"></span><button class="btn ghost sm" data-capture="dictate_hotkey">Change</button></div></div>
         <div class="setting"><div><b>Read selection aloud</b><small>Press again to stop</small></div>
           <div class="shortcut"><span class="keys" id="readKeys2"></span><button class="btn ghost sm" data-capture="read_hotkey">Change</button></div></div>
+        <div class="setting"><div><b>Edit by voice</b><small>Select text, press, say how to change it ("make it friendlier"), press again</small></div>
+          <div class="shortcut"><span class="keys" id="editKeys"></span><button class="btn ghost sm" data-capture="edit_hotkey">Change</button></div></div>
         <div class="setting"><div><b>Activation</b></div>
           <div class="seg" data-setting="activation">
             <button data-v="automatic">Automatic</button><button data-v="push_to_talk">Hold to talk</button><button data-v="toggle">Toggle</button></div></div>
@@ -194,9 +208,25 @@
         <div class="setting"><div><b>Insert by</b><small>Typing works in apps that block paste</small></div>
           <div class="seg" data-setting="insert_method"><button data-v="paste">Paste</button><button data-v="type">Type</button></div></div>
         <div class="setting"><div><b>Microphone</b></div><select data-setting="microphone" id="micSel"></select></div>
+        <div class="setting"><div><b>Language</b><small id="langNote">Other languages need a multilingual model, such as Whisper Large v3 Turbo</small></div>
+          <select data-setting="language" id="langSel"></select></div>
+        <div class="setting"><div><b>Voice actions</b><small>Say "send it" at the end to press Enter, or just "undo that" / "scratch that"</small></div><label class="switch"><input type="checkbox" data-setting="voice_actions"><i></i></label></div>
         <div class="setting"><div><b>Sounds</b><small>A short chime when recording starts and stops</small></div><label class="switch"><input type="checkbox" data-setting="sounds"><i></i></label></div>
         <div class="setting"><div><b>Tidy up</b><small>Capital letter at the start, full stop at the end</small></div><label class="switch"><input type="checkbox" data-setting="tidy"><i></i></label></div>
         <div class="setting"><div><b>Space after each dictation</b></div><label class="switch"><input type="checkbox" data-setting="trailing_space"><i></i></label></div>
+      </div>
+      <div class="card group">
+        <h3><span data-icon="type"></span>Personal dictionary</h3>
+        <p class="muted small">Names, products and jargon Parlo should always spell right, one per line. Close mishearings are
+          corrected ("Pallo" becomes Parlo) and Whisper models are told to expect them. Real words are never changed.</p>
+        <textarea id="dictText" rows="5" placeholder="Parlo&#10;Siobhan&#10;Kubernetes"></textarea>
+        <div class="right"><button class="btn primary sm" id="saveDict">Save dictionary</button></div>
+      </div>
+      <div class="card group">
+        <h3><span data-icon="sliders"></span>General</h3>
+        <div class="setting"><div><b>Start with Windows</b><small>Parlo opens quietly in the tray when you sign in</small></div><label class="switch"><input type="checkbox" data-setting="start_with_windows"><i></i></label></div>
+        <div class="setting"><div><b>Floating mic button</b><small>A small button that stays on top: click to dictate, drag to move</small></div><label class="switch"><input type="checkbox" data-setting="widget"><i></i></label></div>
+        <div class="setting"><div><b>Walkthrough</b><small>See the welcome tour again</small></div><button class="btn ghost sm" id="replayTour">Show tour</button></div>
       </div>
       <div class="card group">
         <h3><span data-icon="replace"></span>Word replacements</h3>
@@ -241,6 +271,12 @@
   <h3>Press your new shortcut</h3>
   <div class="keys big" id="captureKeys"><kbd>…</kbd></div>
   <p class="muted small">Hold the keys together, then let go. Esc cancels.</p>
+</div></div>
+<div class="tour" id="tour" hidden><div class="tour-card">
+  <div class="tour-dots" id="tourDots"></div>
+  <div class="tour-body" id="tourBody"></div>
+  <div class="tour-foot"><button class="btn ghost" id="tourSkip">Skip</button><span class="grow"></span>
+    <button class="btn ghost" id="tourBack">Back</button><button class="btn primary" id="tourNext">Next</button></div>
 </div></div>
 <div class="toasts" id="toasts"></div>
 <script src="icons.js"></script>
