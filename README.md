@@ -6,8 +6,13 @@ aloud. Everything runs on your own PC; your audio never leaves the computer.
 
 ## Install (once)
 
-1. Unzip the folder somewhere permanent, for example `Documents\Parlo`.
-2. Double-click **Setup.bat**. The Parlo installer opens: press **Install** and watch each step
+Parlo lives in a private GitHub repository, so you need a GitHub account that has been invited
+to it (accept the invitation email first).
+
+1. Double-click **Install Parlo.bat** (it can sit in Downloads). If Git is missing it offers to
+   install it. It then downloads Parlo into `%LOCALAPPDATA%\Parlo`; the first time, a GitHub
+   sign-in window may open: sign in with the invited account. Windows remembers it afterwards.
+2. The Parlo installer opens by itself: press **Install** and watch each step
    tick off. It downloads about 2.3 GB the first time (Python 3.11, PyTorch, the speech
    libraries, the 156 MB Bark 3.0 speech model and the 1 GB AI writing model), puts everything
    inside this folder, then unpacks the speech model once. It takes 15 to 30 minutes. If a step
@@ -17,6 +22,19 @@ aloud. Everything runs on your own PC; your audio never leaves the computer.
    - If Python 3.11 cannot be installed automatically, install it from python.org
      (tick "py launcher") and run Setup.bat again.
 3. Start **Parlo** from the Desktop shortcut (or `Start Parlo.bat`).
+
+A copy unzipped from a zip file also works: run **Setup.bat** inside it instead. It just can't
+update itself.
+
+### Updates
+
+Parlo checks GitHub for a new version 30 seconds after it starts and then every 6 hours (or
+press *Check now* in Settings). When there is one, an **Update available** card appears at the
+bottom left: click it to see what changed, then **Update and restart**. Your settings, notes,
+history and models are kept. Nothing updates while you are dictating or recording a meeting.
+A copy whose files were edited by hand is not updated automatically; Parlo says so instead.
+
+To publish an update: commit and push to `main`. Every installed copy offers it at its next check.
 
 The model takes about 20 seconds to load at each start. A microphone icon sits in the system
 tray; closing the window keeps the app running there (right-click the icon to quit).
