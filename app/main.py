@@ -51,6 +51,7 @@ LLM_WORKER = Path(__file__).with_name("llm_worker.py")
 TTS_WORKER = Path(__file__).with_name("tts_worker.py")
 SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|\n+")
 MEETING_CHUNK_S = 30  # the meeting recorder transcribes and saves every 30 seconds
+VOICE_MIN = 0.008  # microphone level (RMS) below which nothing counts as speech, however quiet the room
 UPDATE_FIRST_S, UPDATE_EVERY_S = 30, 6 * 3600  # when to look for a new version on GitHub
 ACTION_NAMES = {"undo": "Undo", "delete_last": "Deleted", "select_all": "Select all", "copy": "Copied",
                 "enter": "Enter", "tab": "Tab", "escape": "Escape"}
@@ -187,6 +188,8 @@ class App:
             log.exception("event handling failed")
         level = self.recorder.level if self.state == "recording" else 0.0
         self.overlay.tick(level)
+        if self.state == "recording":
+            self._auto_stop_tick(level)
         if (self.state == "recording" or self.test_rec) and self.window_visible:  # live waveforms in the window
             self._level_n = getattr(self, "_level_n", 0) + 1
             if self._level_n % 3 == 0:
@@ -209,6 +212,27 @@ class App:
             log.info("unloading the idle voice model")
             threading.Thread(target=self.tts.stop, daemon=True).start()
         self.root.after(30, self._pump)
+
+    def _auto_stop_tick(self, level):
+        """Tap-to-talk: stop by itself once the speaker has been quiet for the chosen number of seconds.
+        Voice means clearly louder than the room's background noise, which is tracked as it goes."""
+        wait = float(self.settings["auto_stop"] or 0)
+        if not wait or not getattr(self, "tap_mode", False) or self.target == "note":
+            return
+        if level and (not self.noise or level < self.noise):
+            self.noise = level  # background follows the quietest moments...
+        elif self.noise:
+            self.noise += (level - self.noise) * 0.002  # ...and rises only slowly, so speech doesn't lift it
+        voice = level > max(VOICE_MIN, self.noise * 4)
+        self.voice_frames = self.voice_frames + 1 if voice else 0
+        if self.voice_frames >= 3:  # ~0.1 s of voice in a row, so a click or bump doesn't count
+            self.heard_voice = True
+        now = time.time()
+        if voice and self.heard_voice:
+            self.last_voice = now
+        if (self.heard_voice and now - self.last_voice >= wait) or (not self.heard_voice and now - self.press_t >= wait + 8):
+            log.info("auto-stop after %.1fs of silence", now - self.last_voice)
+            self._stop_recording()
 
     # read aloud ----------------------------------------------------------------------
     def neural_voice(self):
@@ -453,6 +477,7 @@ class App:
                 self._stop_recording()
             else:
                 self._dictate_down(time.time(), "insert", self.mode_for_app())
+                self.tap_mode = True
         elif kind == "edit_down":
             if self.state == "recording" and self.target == "edit":
                 self._stop_recording()
@@ -619,6 +644,9 @@ class App:
             self.target = target
             self.press_t = t
             self.last_live = t
+            # auto-stop after silence: only when nobody is holding the key down (tap-to-talk and edits)
+            self.tap_mode = target == "edit" or self.settings["activation"] == "toggle"
+            self.heard_voice, self.voice_frames, self.noise, self.last_voice = False, 0, 0.0, time.time()
             self.mode = self.mode_by_id(mode_id) if target == "insert" else None
             ai_mode = self.mode if self.mode and self.mode.get("instructions", "").strip() else None
             self._set_state("recording")
@@ -639,6 +667,8 @@ class App:
         held = t - self.press_t
         if mode == "push_to_talk" or (mode == "automatic" and held >= HOLD_S):
             self._stop_recording()
+        elif mode == "automatic":
+            self.tap_mode = True  # a quick tap: recording goes on until a second tap or silence
 
     def _stop_recording(self):
         wave = self.recorder.stop()

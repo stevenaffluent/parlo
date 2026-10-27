@@ -11,12 +11,13 @@ import time
 import uuid
 from pathlib import Path
 
-from ai import BUILTIN_MODES
+from ai import BUILTIN_MODES, CLEAN_INSTRUCTIONS, OLD_CLEAN_INSTRUCTIONS
 
 DEFAULTS = {
     "model": "bark-3.0",
     "dictate_hotkey": "ctrl+win",
     "activation": "automatic",
+    "auto_stop": "3",  # tap-to-talk stops after this many seconds of silence ("0" = off)
     "action": "autoInsert",
     "insert_method": "paste",
     "microphone": None,
@@ -81,6 +82,9 @@ class Settings(dict):
         self.update({k: v for k, v in _read_json(path).items() if k in DEFAULTS})
         self.shared_mtime = 0
         self.load_shared()
+        for m in self["modes"]:  # the Clean up mode got better instructions; keep any the user wrote
+            if m.get("id") == "clean" and m.get("instructions") == OLD_CLEAN_INSTRUCTIONS:
+                m["instructions"] = CLEAN_INSTRUCTIONS
 
     @property
     def sync_dir(self):

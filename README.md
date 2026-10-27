@@ -43,7 +43,7 @@ tray; closing the window keeps the app running there (right-click the icon to qu
 
 | Do this | What happens |
 |---|---|
-| Tap **Ctrl + Win** | Start recording. Tap again to stop and insert the text. |
+| Tap **Ctrl + Win** | Start recording. Tap again to stop and insert the text, or just stop talking: after 3 seconds of quiet it stops by itself (*Stop after silence* in Settings). |
 | Hold **Ctrl + Win** while talking | Push-to-talk: release to stop and insert. |
 | **Esc** while recording | Cancel. |
 | Select text, press **Ctrl + Alt + R** | Read the selection aloud. Press again to stop. |
@@ -106,6 +106,12 @@ setup and nothing is sent anywhere. Pick a mode on Home and dictate as usual.
 | Qwen3 4B | 2.3 GB | ~3.5 GB | ~8 s | Best writing (emails); 16 GB PCs |
 
 \*Measured on a 6-core Intel i5 without a graphics card (Qwen3 4B estimated). All Apache-2.0.
+
+What to expect from the on-PC models: they reliably remove filler words, fix punctuation and
+capitals, apply "no wait, Wednesday" style corrections and fix simple grammar ("they wants").
+They usually miss subtler slips, such as a wrong word left next to the right one ("the most
+capable monitors models"). Catching those needs a much larger model: choose an online service
+below for Clean up if that matters to you.
 
 Download or switch models in **AI modes**. The model loads while you're still speaking and is
 unloaded after 5 idle minutes, so it only uses memory when you use it.
