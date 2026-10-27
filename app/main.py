@@ -349,6 +349,23 @@ class App:
         except ai.AIError:
             pass
 
+    def _rewrite(self, text, instructions, system=None, timeout=25):
+        """Rewrite with the chosen AI. If an online service fails (offline, rate limit, bad key) and an
+        on-PC model is downloaded, use that instead, so the text is still cleaned up."""
+        s = self.settings
+        try:
+            return ai.rewrite(text, instructions, s["ai_provider"], secrets_store.unprotect(s["ai_key"]),
+                              s["ai_model"], s["ai_base_url"], timeout=timeout, local=self._local_rewrite, system=system)
+        except ai.AIError as e:
+            if s["ai_provider"] == "local" or not models.is_installed(s["llm_model"]):
+                raise
+            name = ai.PROVIDERS.get(s["ai_provider"], {}).get("name", "The online AI")
+            log.warning("%s failed (%s); using the on-PC model", name, e)
+            if time.time() - getattr(self, "fallback_told", 0) > 120:  # say it once, not on every dictation
+                self.fallback_told = time.time()
+                self.push("toast", f"{name} didn't answer ({e}). Used the on-PC model instead.")
+            return ai.rewrite(text, instructions, "local", "", timeout=timeout, local=self._local_rewrite, system=system)
+
     def _local_rewrite(self, system, text):
         with self.llm_lock:
             self._ensure_llm()
@@ -738,11 +755,9 @@ class App:
             self._finish_insert(text, secs, None, None, None, actions)
 
     def _polish(self, raw, secs, mode, actions):
-        s = self.settings
         t0 = time.time()
         try:
-            out = ai.rewrite(raw, mode["instructions"], s["ai_provider"], secrets_store.unprotect(s["ai_key"]),
-                             s["ai_model"], s["ai_base_url"], local=self._local_rewrite)
+            out = self._rewrite(raw, mode["instructions"])
             log.info("AI mode %s took %.1fs", mode["id"], time.time() - t0)
             self.post("polished", out, secs, raw, mode["name"], None, actions)
         except ai.AIError as e:
@@ -799,12 +814,10 @@ class App:
         self.post("edit_start", selection)
 
     def _edit(self, instruction, secs):
-        s = self.settings
         sel = self.edit_selection
         prompt = f"INSTRUCTION: {instruction}\n\nTEXT:\n{sel}" if sel.strip() else f"INSTRUCTION: {instruction}"
         try:
-            out = ai.rewrite(prompt, "", s["ai_provider"], secrets_store.unprotect(s["ai_key"]), s["ai_model"],
-                             s["ai_base_url"], local=self._local_rewrite, system=ai.EDIT_SYSTEM)
+            out = self._rewrite(prompt, "", system=ai.EDIT_SYSTEM)
             self.post("edited", out, secs, instruction, None)
         except ai.AIError as e:
             log.warning("edit by voice failed: %s", e)
@@ -936,9 +949,7 @@ class App:
 
         if len(transcript.split()) < 25:
             return ""
-        s = self.settings
-        ask = lambda text: ai.rewrite(text, "", s["ai_provider"], secrets_store.unprotect(s["ai_key"]), s["ai_model"],
-                                      s["ai_base_url"], local=self._local_rewrite, system=ai.SUMMARY_SYSTEM, timeout=120)
+        ask = lambda text: self._rewrite(text, "", system=ai.SUMMARY_SYSTEM, timeout=120)
         try:
             if len(transcript) > 9000:  # too long for a small model at once: summarise parts, then the parts
                 parts = [transcript[i:i + 8000] for i in range(0, len(transcript), 8000)]

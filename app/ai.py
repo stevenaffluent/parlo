@@ -14,7 +14,8 @@ log = logging.getLogger("parlo.ai")
 
 PROVIDERS = {
     "local": {"name": "On this PC (free)", "base": "", "model": "", "key_url": "",
-              "note": "Free, private and offline: a small AI model runs on your own computer."},
+              "note": "Free, private and offline: a small AI model runs on your own computer. "
+                      "Have an API key (e.g. Groq's free tier)? Choose that service in this list to enter it."},
     "groq": {"name": "Groq", "base": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile",
              "key_url": "https://console.groq.com/keys", "note": "Free tier available. Very fast."},
     "openai": {"name": "OpenAI", "base": "https://api.openai.com/v1", "model": "gpt-4.1-mini",
