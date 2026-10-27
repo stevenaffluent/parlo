@@ -20,6 +20,8 @@
       <button class="nav" data-page="models"><span data-icon="cpu"></span>Models</button>
       <button class="nav" data-page="settings"><span data-icon="sliders"></span>Settings</button>
     </nav>
+    <button class="update-pill" id="updatePill" hidden><span class="up-ico" data-icon="download"></span>
+      <span><b>Update available</b><small id="updateSub">A new version of Parlo</small></span></button>
     <div class="engine-card" id="engineCard">
       <div class="engine-row"><span class="dot" id="engineDot"></span><span id="engineName">Loading…</span></div>
       <div class="engine-sub" id="engineSub"></div>
@@ -227,6 +229,7 @@
         <div class="setting"><div><b>Start with Windows</b><small>Parlo opens quietly in the tray when you sign in</small></div><label class="switch"><input type="checkbox" data-setting="start_with_windows"><i></i></label></div>
         <div class="setting"><div><b>Floating mic button</b><small>A small button that stays on top: click to dictate, drag to move</small></div><label class="switch"><input type="checkbox" data-setting="widget"><i></i></label></div>
         <div class="setting"><div><b>Walkthrough</b><small>See the welcome tour again</small></div><button class="btn ghost sm" id="replayTour">Show tour</button></div>
+        <div class="setting"><div><b>Updates</b><small id="updateNote">Parlo looks for a new version when it starts and every few hours</small></div><button class="btn ghost sm" id="checkUpdate">Check now</button></div>
       </div>
       <div class="card group">
         <h3><span data-icon="replace"></span>Word replacements</h3>

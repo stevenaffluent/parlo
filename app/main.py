@@ -35,6 +35,7 @@ import audio  # noqa: E402
 import models  # noqa: E402
 import secrets_store  # noqa: E402
 import textout  # noqa: E402
+import updater  # noqa: E402
 from engine_client import EngineClient  # noqa: E402
 from hotkeys import HotkeyManager  # noqa: E402
 from overlay import Overlay  # noqa: E402
@@ -50,6 +51,7 @@ LLM_WORKER = Path(__file__).with_name("llm_worker.py")
 TTS_WORKER = Path(__file__).with_name("tts_worker.py")
 SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|\n+")
 MEETING_CHUNK_S = 30  # the meeting recorder transcribes and saves every 30 seconds
+UPDATE_FIRST_S, UPDATE_EVERY_S = 30, 6 * 3600  # when to look for a new version on GitHub
 ACTION_NAMES = {"undo": "Undo", "delete_last": "Deleted", "select_all": "Select all", "copy": "Copied",
                 "enter": "Enter", "tab": "Tab", "escape": "Escape"}
 
@@ -114,6 +116,25 @@ class App:
         threading.Thread(target=self._tk_main, args=(tk_ready,), daemon=True, name="tk").start()
         tk_ready.wait()
         self.post("start_engine")
+        self.just_updated = "--updated" in sys.argv
+        self.update_state = {"supported": updater.supported(), "available": False}
+        if self.update_state["supported"]:
+            threading.Thread(target=self._update_loop, daemon=True, name="updates").start()
+
+    def _update_loop(self):
+        """Look for a new version 30 s after start, then every 6 hours."""
+        time.sleep(UPDATE_FIRST_S)
+        while not self.quitting:
+            self.check_update()
+            time.sleep(UPDATE_EVERY_S)
+
+    def check_update(self):
+        st = updater.check()
+        if st.get("error") and self.update_state.get("available"):
+            return self.update_state  # offline now: keep showing the update found earlier
+        self.update_state = st
+        self.push("update", st)
+        return st
 
     def _open_stores(self):
         base = self.settings.sync_dir or DATA
@@ -408,6 +429,7 @@ class App:
             "history": list(reversed(self.history.items))[:200], "stats": self.history.stats(),
             "voices": self.speaker.voices, "mics": [m for m in self.microphones() if "Sound Mapper" not in m],
             "notes": self.notes.list(), "engine_mb": self.engine.memory_mb(),
+            "update": self.update_state, "just_updated": self.just_updated,
         }
 
     def microphones(self):
@@ -1125,6 +1147,21 @@ class Api:
                 seen.append(a)
         return seen[:20]
 
+    # updates from GitHub
+    def check_update(self):
+        return self._app.check_update()
+
+    def apply_update(self):
+        app = self._app
+        if app.state != "idle" or app.meeting:
+            return {"error": "Finish the dictation or meeting first, then update."}
+        err = updater.apply()
+        if err:
+            return {"error": err}
+        updater.restart()
+        threading.Timer(0.6, lambda: app.post("quit")).start()  # let the window show "Restarting" first
+        return {"ok": True}
+
     def capture_shortcut(self, on):
         """While the user records a new shortcut, the global hotkeys must not fire."""
         if on:
@@ -1295,6 +1332,12 @@ def main():
     from icon import save_ico
 
     save_ico(DATA / "icon.ico")  # redrawn each start so a new logo always reaches the window and tray
+    if "--wait-pid" in sys.argv:  # restarted after an update: let the old Parlo finish closing first
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x00100000, False, int(sys.argv[sys.argv.index("--wait-pid") + 1]))  # SYNCHRONIZE
+        if handle:
+            k32.WaitForSingleObject(handle, 20000)
+            k32.CloseHandle(handle)
     mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "ParloSingleInstance")
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         ctypes.windll.user32.MessageBoxW(None, "Parlo is already running (see the tray icon).", "Parlo", 0x40)

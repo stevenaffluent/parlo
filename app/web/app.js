@@ -13,6 +13,8 @@ function boot() {
   API.ui_ready().then(async (st) => {
     Object.assign(S, st); renderAll(); go(location.hash.slice(1) || "home");
     const m = await API.meeting_state(); if (m) { S.meeting = { ...m, state: "recording" }; renderMeeting(); }
+    renderUpdate();
+    if (S.just_updated) toast("Parlo was updated to the latest version", "check");
     if (!S.settings.onboarded) startTour();
   });
 }
@@ -33,6 +35,7 @@ window.onBark = (kind, data) => {
   else if (kind === "toast") { toast(data); }
   else if (kind === "settings") { S.settings = data; applyTheme(); renderSettings(); renderHome(); renderModes(); }
   else if (kind === "meeting") { onMeeting(data); }
+  else if (kind === "update") { const was = S.update?.available; S.update = data; renderUpdate(); if (data.available && !was) toast("A new version of Parlo is available", "download"); }
   else if (kind === "notes") { S.notes = data; renderNotesList(); }
   else if (kind === "llms") { S.llms = data; renderLlms(); }
   else if (kind === "tts") { S.tts = data; renderRead(); }
@@ -826,6 +829,39 @@ $("#tourNext").onclick = () => { if (tourStep < TOUR.length - 1) { tourStep++; r
 $("#tourBack").onclick = () => { if (tourStep > 0) { tourStep--; renderTour(); } };
 $("#tourSkip").onclick = endTour;
 
+// ---------- updates from GitHub ----------
+function renderUpdate() {
+  const u = S.update || {};
+  $("#updatePill").hidden = !u.available;
+  if (u.available) $("#updateSub").textContent = u.blocked ? "Needs a manual update" : `${u.behind} change${u.behind === 1 ? "" : "s"} · click to update`;
+  $("#checkUpdate").hidden = !u.supported;
+  $("#updateNote").textContent = !u.supported ? "This copy was installed from a zip file, so it can't update itself. Reinstall with Install Parlo.bat to get updates."
+    : u.available ? "A new version is ready." : u.error ? "Couldn't reach GitHub just now; Parlo will try again later."
+    : "Parlo looks for a new version when it starts and every few hours.";
+}
+function updateDialog() {
+  const u = S.update;
+  const list = `<ul class="changes">${(u.changes || []).map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`;
+  if (u.blocked) return modal("Update available", `<p class="muted small" style="margin:0 0 8px">${esc(u.blocked)}</p>${list}`, [["OK", "primary", () => {}]]);
+  modal("Update Parlo", `<p class="muted small" style="margin:0 0 8px">What's new:</p>${list}
+    <p class="muted small" style="margin:12px 0 0">Parlo restarts by itself. Your settings, notes, history and models stay as they are.</p>`,
+    [["Later", "ghost", () => {}], [icon("download") + "Update and restart", "primary", () => { runUpdate(); return false; }]]);
+}
+async function runUpdate() {
+  $("#modalFoot").innerHTML = `<span class="muted small" style="display:flex;gap:8px;align-items:center"><span class="spinner"></span> Updating…</span>`;
+  const r = await API.apply_update();
+  if (r && r.error) { closeModal(); modal("Couldn't update", esc(r.error), [["OK", "primary", () => {}]]); return; }
+  $("#modalFoot").innerHTML = `<span class="muted small" style="display:flex;gap:8px;align-items:center"><span class="spinner"></span> Restarting Parlo…</span>`;
+}
+$("#updatePill").onclick = updateDialog;
+$("#checkUpdate").onclick = async () => {
+  const b = $("#checkUpdate"); b.disabled = true; b.textContent = "Checking…";
+  S.update = await API.check_update(); renderUpdate();
+  b.disabled = false; b.textContent = "Check now";
+  if (S.update.available) updateDialog();
+  else toast(S.update.error ? "Couldn't reach GitHub. Check your internet connection." : "Parlo is up to date", S.update.error ? "info" : "check");
+};
+
 // ---------- demo mode (opened in a normal browser, for design work) ----------
 function demoApi() {
   const now = Date.now() / 1000;
@@ -855,6 +891,7 @@ function demoApi() {
       { t: now - 7200, text: "Remind me to call the landlord about the boiler tomorrow morning.", secs: 4.1 },
       { t: now - 90000, text: "The new design looks a lot cleaner. Let's ship it on Monday.", secs: 3.9 },
     ],
+    update: { supported: true, available: true, behind: 3, changes: ["Meeting recorder: summaries list who does what", "Faster start-up", "Fix: floating button remembers its place"] },
     voices: ["Microsoft Zira Desktop", "Microsoft David Desktop"], mics: ["Microphone (UGREEN USB MIC-CM58)"],
     notes: [{ id: "a", title: "Project kickoff", preview: "Goals for the first sprint, owners and dates…", updated: now - 500 },
             { id: "b", title: "Shopping", preview: "Milk, eggs, coffee beans", updated: now - 86400 }],
@@ -873,6 +910,7 @@ function demoApi() {
     note_save: () => ok(Date.now() / 1000), save_settings: (c) => ok(Object.assign(st.settings, c)),
     save_modes: (m, a) => ok(Object.assign(st.settings, { modes: m, active_mode: a })), save_ai: () => ok(st.settings),
     inspect_hf: () => ok({ ok: true, repo: "Qwen/Qwen3-8B-GGUF", license: "apache-2.0", choices: [{ file: "Qwen3-8B-Q4_K_M.gguf", mb: 4790 }, { file: "Qwen3-8B-Q5_K_M.gguf", mb: 5600 }, { file: "Qwen3-8B-Q8_0.gguf", mb: 8340 }] }), delete_history: () => ok(st.stats), clear_history: () => ok(st.stats),
+    check_update: () => ok(st.update), apply_update: () => new Promise((r) => setTimeout(() => r({ ok: true }), 1200)),
     engine_memory: () => ok(3150), recent_apps: () => ok(["outlook.exe", "slack.exe", "chrome.exe"]),
     meeting_start: () => { setTimeout(() => window.onBark("meeting", { note_id: "a", state: "recording", start: Date.now() / 1000, html: "<h2>Transcript</h2><p><b>[00:00:00]</b> Okay, let's get started with the weekly sync.</p>" }), 400); return ok({ note_id: "a" }); }, note_record: () => { setTimeout(() => window.onBark("note_insert", [{ t: "text", v: "Here is a dictated sentence." }, { t: "bullet" }, { t: "text", v: "First point" }]), 300); return ok(); },
   }[name] || (() => ok(null))) });
