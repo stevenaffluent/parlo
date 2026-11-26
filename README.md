@@ -4,6 +4,9 @@ Private, offline dictation for Windows. Press a shortcut, speak, and your words 
 into whatever app you are using. It also has voice notes with formatting, and can read text
 aloud. Everything runs on your own PC; your audio never leaves the computer.
 
+Parlo is free to download and use. The code is here for anyone to read; a licence for reusing it
+has not been chosen yet.
+
 ## Install (once)
 
 Download **ParloSetup.exe** from the latest release, or use **Install Parlo.bat** from this repository.
