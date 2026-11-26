@@ -1,7 +1,8 @@
 """Updates from the Parlo GitHub repository.
 
-A copy installed with "Install Parlo.bat" is a git clone. Parlo fetches origin/main now and then;
-when there are new commits it offers to update, which is a fast-forward pull, a library install if
+A copy installed with "Install Parlo.bat" is a git clone. Parlo fetches origin/stable now and then
+(the branch that only ever points at a tested release; day-to-day work on main reaches nobody).
+When stable has new commits it offers to update, which is a fast-forward pull, a library install if
 requirements.txt changed, and a restart. Settings, history, notes and models are not in the
 repository, so an update never touches them. A copy with its own edits or commits (a developer's)
 is never updated automatically: it would mean merging, so Parlo says why and leaves it alone.
@@ -15,7 +16,7 @@ from pathlib import Path
 
 log = logging.getLogger("parlo.update")
 ROOT = Path(__file__).resolve().parent.parent
-BRANCH = "main"
+BRANCH = "stable"  # moved only when a release has been tested (README, "Publishing a release")
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW: no console flashes up for each git call
 
 
@@ -64,7 +65,7 @@ def check():
 
 
 def apply():
-    """Fast-forward to origin/main and install new libraries if needed. Returns None or an error message."""
+    """Fast-forward to origin/stable and install new libraries if needed. Returns None or an error message."""
     st = check()
     if not st.get("available"):
         return st.get("error") or "Parlo is already up to date."

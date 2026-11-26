@@ -6,12 +6,13 @@ aloud. Everything runs on your own PC; your audio never leaves the computer.
 
 ## Install (once)
 
-Parlo lives in a private GitHub repository, so you need a GitHub account that has been invited
-to it (accept the invitation email first).
+Download **ParloSetup.exe** from the latest release, or use **Install Parlo.bat** from this repository.
 
-1. Double-click **Install Parlo.bat** (it can sit in Downloads). If Git is missing it offers to
-   install it. It then downloads Parlo into `%LOCALAPPDATA%\Parlo`; the first time, a GitHub
-   sign-in window may open: sign in with the invited account. Windows remembers it afterwards.
+1. Run **ParloSetup.exe** (or double-click **Install Parlo.bat**; either can sit in Downloads). The
+   installer is not code-signed, so Windows SmartScreen may warn: choose *More info* then *Run anyway*.
+   If Windows 11 **Smart App Control** blocks it and offers no way past, use *Install Parlo.bat* only if
+   Windows allows it; do not turn security features off just for this. If Git is missing it offers to
+   install it. It then downloads Parlo into `%LOCALAPPDATA%\Parlo`.
 2. The Parlo installer opens by itself: press **Install** and watch each step
    tick off. It downloads about 2.3 GB the first time (Python 3.11, PyTorch, the speech
    libraries, the 156 MB Bark 3.0 speech model and the 1 GB AI writing model), puts everything
@@ -34,7 +35,16 @@ bottom left: click it to see what changed, then **Update and restart**. Your set
 history and models are kept. Nothing updates while you are dictating or recording a meeting.
 A copy whose files were edited by hand is not updated automatically; Parlo says so instead.
 
-To publish an update: commit and push to `main`. Every installed copy offers it at its next check.
+### Publishing a release (maintainer)
+
+Installed copies follow the `stable` branch only. Pushing to `main` reaches nobody.
+1. Test on `main`, including a fresh install on a PC that has never had Parlo.
+2. Change the number in `app/version.py`, commit, and tag it (`v1.0.1`).
+3. Move `stable` to that commit and push both: `git push origin v1.0.1 v1.0.1^{commit}:refs/heads/stable`.
+4. Build `ParloSetup.exe` (`powershell -File installer\build-setup.ps1`) and attach it to a GitHub release
+   for that tag, with exactly that file name: the website's download link depends on it.
+
+Whoever can push to `stable` controls the code installed copies run: keep two-step sign-in on.
 
 The model takes about 20 seconds to load at each start. A microphone icon sits in the system
 tray; closing the window keeps the app running there (right-click the icon to quit).

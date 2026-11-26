@@ -1,8 +1,8 @@
 @echo off
 setlocal
-rem Parlo installer: downloads Parlo from its private GitHub repository into %LOCALAPPDATA%\Parlo,
+rem Parlo installer: downloads the latest Parlo release from GitHub into %LOCALAPPDATA%\Parlo,
 rem then runs Setup.bat there. Because the folder is a git clone, Parlo can update itself later.
-rem This is the only file to send someone; it can be run from anywhere (Downloads is fine).
+rem ParloSetup.exe carries this file; it can also be run on its own from anywhere (Downloads is fine).
 title Parlo installer
 set "REPO=https://github.com/stevenaffluent/parlo.git"
 set "DEST=%LOCALAPPDATA%\Parlo"
@@ -22,11 +22,10 @@ if errorlevel 1 (
 
 if exist "%DEST%\.git" (
   echo Parlo is already in %DEST%. Getting the latest version...
-  git -C "%DEST%" pull --ff-only
+  git -C "%DEST%" pull --ff-only origin stable
 ) else (
   echo Downloading Parlo to %DEST% ...
-  echo If a GitHub sign-in window opens, sign in with the GitHub account that was invited to Parlo.
-  git clone "%REPO%" "%DEST%"
+  git clone --branch stable "%REPO%" "%DEST%"
   if errorlevel 1 goto failed
 )
 call "%DEST%\Setup.bat"
@@ -43,7 +42,7 @@ exit /b 1
 echo.
 echo Parlo could not be downloaded. Check that:
 echo  - you are connected to the internet, and
-echo  - you accepted the GitHub invitation to the Parlo repository and signed in with that account.
+echo  - nothing such as a firewall is blocking github.com.
 echo Then run this file again.
 pause
 exit /b 1

@@ -8,3 +8,5 @@ data/
 __pycache__/
 *.part
 *.zip
+# built installer (attached to GitHub releases, never committed)
+dist/
